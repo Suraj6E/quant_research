@@ -1,0 +1,23 @@
+# Environment
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data — never commit market data or derived stores
+data/
+*.bi5
+*.parquet
+*.duckdb
+*.duckdb.wal
+
+# Local tooling
+.vscode/
+.idea/

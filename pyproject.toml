@@ -1,0 +1,46 @@
+[project]
+name = "quant-research"
+version = "0.0.0"
+description = "Point-in-time FX research database"
+requires-python = ">=3.12"
+
+# Infrastructure and test dependencies only. Ingestion dependencies are
+# deliberately absent — planning.md §12 blocks ingestion code until the
+# Path A/B/C decision and the three source-access checks are resolved.
+dependencies = [
+  "duckdb>=1.1",             # Tier C, in-process query layer
+  "psycopg[binary]>=3.2",    # Tier A client
+  "clickhouse-connect>=0.8", # Tier B client
+  "pyarrow>=17",             # Parquet interchange between tiers
+  "pandas>=2.2",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Phase 0 writes acceptance tests against an empty schema; they are expected to
+# fail. Marks keep that red suite separable from tests that must stay green.
+markers = [
+  "acceptance: point-in-time acceptance tests (planning.md Phase 0)",
+  "integration: requires a running Postgres/ClickHouse stack",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
