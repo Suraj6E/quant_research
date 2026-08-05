@@ -75,7 +75,7 @@ pip install -e ".[dev,web]"
 
 Copy-Item .env.example .env    # then set both passwords
 docker compose up -d
-pytest                          # 100+ tests, all green
+pytest                          # 116 tests, all green
 uvicorn fxpit.web.app:app --port 8000
 ```
 

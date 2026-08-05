@@ -1,6 +1,6 @@
 # Phase 0 — Acceptance test specification
 
-**Status: GREEN as of Phase 3.** 28 acceptance tests passing (70 across the whole suite).
+**Status: GREEN as of Phase 3.** 28 acceptance tests passing (116 across the whole suite).
 
 This document was written in Phase 0 when the suite was red by design and every
 failure was a `NotImplementedError` from an unimplemented `as_of()`. Phase 3
@@ -67,9 +67,11 @@ until later, so the backtest traded on a number nobody had.
 | `test_vintage_seq_increases_with_known_at` | `vintage_seq` is only useful if it agrees with chronology |
 | `test_a_null_value_is_a_real_vintage` | A release published as missing is a fact with a `known_at`, not an absence |
 
-The threshold is currently `MIN_REVISED_PERIODS_FIXTURE = 8`. `planning.md`
-requires **50** against real RTDSM data; raise it in Phase 3 when real vintages
-land.
+The threshold is currently `MIN_REVISED_PERIODS_FIXTURE = 8`, which governs the
+hand-built FIXTURE. `planning.md` requires **50** revised series-periods against
+real RTDSM data — that archive is now loaded (586k observations), so a
+production-scoped revision test at the 50 threshold is outstanding work rather
+than a pending phase.
 
 ## Family 3 — Tick sanity (`test_tick_sanity.py`)
 

@@ -1,6 +1,6 @@
 # Tests
 
-**The suite is green: 70 passed.** See [`SPEC.md`](SPEC.md) for what each acceptance
+**The suite is green: 116 passed.** See [`SPEC.md`](SPEC.md) for what each acceptance
 test means and its failure mode in one sentence.
 
 ```powershell
