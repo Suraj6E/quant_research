@@ -1,0 +1,567 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}A Point-in-Time FX Research Database{% endblock %}
+
+{% block content %}
+<article class="paper">
+
+<header class="paper__head">
+  <p class="paper__kicker">Research prospectus · Working document</p>
+  <h1>Measuring the Price of Hindsight</h1>
+  <p class="paper__subtitle">A point-in-time FX research database, and an experiment to
+    decompose backtest contamination into its constituent sources</p>
+  <p class="paper__meta">
+    Status: Phase 0 of 7 complete · Path C (intraday and multi-day, narrow scope) ·
+    Last revised {{ captured_at }}
+  </p>
+</header>
+
+<section class="abstract">
+  <h2>Abstract</h2>
+  <p>A backtest is a claim about a counterfactual: <em>had this rule been followed then,
+    this is what would have happened.</em> The claim holds only if the simulation is
+    confined at every instant to information that existed at that instant. In practice it
+    rarely is, and the failure is silent — a contaminated backtest raises no error and
+    produces no anomaly, only better results.</p>
+  <p>That look-ahead bias exists is not in dispute. What is missing is <strong>arithmetic</strong>.
+    Practitioners can list the ways a backtest leaks the future; almost nobody can say
+    what any one of them is worth. This project builds a foreign-exchange research
+    database in which the point-in-time guarantee is enforced by executable tests rather
+    than by care, then uses it to run one pre-registered rule under four data regimes that
+    differ only in what the simulation is permitted to know. The differences between the
+    four results are the estimand. The output is not a strategy; it is a
+    <strong>price list for hindsight</strong>, denominated in Sharpe units.</p>
+</section>
+
+<nav class="paper__toc" aria-label="Contents">
+  <ol>
+    <li><a href="#problem">The problem</a></li>
+    <li><a href="#persistence">Why it persists</a></li>
+    <li><a href="#significance">Why it is worth solving</a></li>
+    <li><a href="#question">Research question and contribution</a></li>
+    <li><a href="#alternatives">Why this design and not another</a></li>
+    <li><a href="#why-fx">Why foreign exchange</a></li>
+    <li><a href="#origin">How the project took its present shape</a></li>
+    <li><a href="#method">Method</a></li>
+    <li><a href="#experiment">The experiment</a></li>
+    <li><a href="#expected">Expected results</a></li>
+    <li><a href="#limitations">Limitations</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<section id="problem">
+<h2><span class="sec-num">1</span> The problem</h2>
+
+<p>Consider the United States employment report for January 2024. On the morning of
+2 February 2024 the Bureau of Labor Statistics announced that non-farm payrolls stood at
+157,700 thousand. That number moved markets within milliseconds. It was also wrong — not
+in any culpable sense, but in the ordinary sense that early estimates are built from
+incomplete survey returns and are superseded as returns arrive.</p>
+
+<p>By March the figure was 157,533. By April, 157,560. The annual benchmark revision in
+February 2025 moved it to 157,049, and the next moved it to 157,032. The published value
+fell by 668 thousand over two years, a distance roughly three times the monthly change
+that traders were reacting to in the first place.</p>
+
+{{ m.card_open('Figure 1 — Five vintages of one number', 'recorded',
+    'US non-farm payrolls, reference period January 2024, as published at each successive
+     vintage. Retrieved from ALFRED and verified by scripts/check_fred_key.py. A step
+     line rather than a smooth one: interpolating between revisions would draw values
+     that were never published.') }}
+{{ m.figure(timeline) }}
+{{ m.card_close() }}
+
+<p>Now suppose a researcher tests a rule that trades the payrolls surprise. If the
+database returns 157,032 for January 2024 — the current value, the one a routine query
+returns — then the simulated trader in February 2024 is acting on a figure that would not
+be published for two more years. The strategy is not clever. It is <em>clairvoyant</em>,
+and the backtest cannot tell the difference, because at no point does anything fail.</p>
+
+<p>This is look-ahead bias. It has several distinct channels, and they are usually
+discussed as one undifferentiated hazard:</p>
+
+<ul class="prose-list">
+  <li><strong>Revision leakage.</strong> Using a value that had not yet been published, as
+    above.</li>
+  <li><strong>Timestamp coarsening.</strong> Storing <em>when</em> something became known
+    to the day rather than the second, so a strategy may act at 09:00 on news released at
+    09:30 — or at the prior day's close on news released the following morning.</li>
+  <li><strong>Cost understatement.</strong> Simulating fills at a mid price, or at an
+    assumed constant spread, when the real cost is the bid-ask spread prevailing at that
+    moment — which widens precisely during the news events a macro strategy trades.</li>
+  <li><strong>Universe leakage.</strong> Selecting instruments, date ranges, or parameters
+    with knowledge of how the sample turned out.</li>
+</ul>
+
+<p>Each is individually well known. What is not known — and what this project sets out to
+measure — is <strong>how much each one is worth</strong> in a controlled setting where
+everything else is held fixed.</p>
+</section>
+
+<section id="persistence">
+<h2><span class="sec-num">2</span> Why the problem persists</h2>
+
+<p>The persistence of look-ahead bias is not primarily a matter of carelessness. It is
+produced by four structural features of ordinary data practice, each of which is correct
+in its own domain.</p>
+
+<h3>2.1 Databases are built to store the present</h3>
+<p>The dominant convention in data engineering is that a table holds the best current
+value of a fact. When a value changes, the row is updated and the prior value ceases to
+exist. This is right for nearly every application — an address book should hold your
+current address, not a history of where you have lived — and it is catastrophic for
+research into decisions made in the past. The default is not merely unhelpful here; it
+actively destroys the record that research requires.</p>
+
+<h3>2.2 Vendors serve revised series by default, without warning</h3>
+<p>The standard public interfaces to macroeconomic data return the current series for the
+whole history. A researcher who downloads a CSV of payrolls receives today's values
+stretching back to 1939, with nothing indicating that the early portion was published
+years after the dates it describes.</p>
+
+<p>This project verified a specific instance. The keyless CSV endpoint at the Federal
+Reserve Bank of St. Louis accepts a <code>vintage_date</code> parameter and
+<em>silently ignores it</em>: four requests specifying vintages in 2005, 2015, 2024, and
+none at all returned byte-identical payloads (SHA-256 <code>177efe81de346565</code>), each
+carrying data through 2026. Asking explicitly for the January 2005 vintage returns today's
+numbers, with no error and no warning. Vintage access exists, but only behind an
+authenticated interface most casual users never reach.</p>
+
+<p class="pull">The failure mode this project studies is not hypothetical. It is
+available on request, for free, and it looks exactly like success.</p>
+
+<h3>2.3 Revisions are not noise</h3>
+<p>It is tempting to treat revisions as zero-mean measurement error that will wash out in
+a long sample. It does not. Aruoba (2008) documents that revisions to major US
+macroeconomic series are biased, are predictable from information available at the time of
+the initial release, and fail the properties that "well-behaved" measurement error would
+have. Revisions carry systematic structure related to the business cycle, so a strategy
+tested on revised data is not merely advantaged — it is advantaged
+<em>more in some regimes than others</em>, and precisely in the regimes where
+macroeconomic strategies live or die.</p>
+
+<h3>2.4 The bid-ask spread is inconvenient to store and expensive to ignore</h3>
+<p>Storing separate bid and ask series roughly doubles the volume of a tick archive, and
+most freely available price histories therefore publish a mid price or a single "close".
+But the spread <em>is</em> the transaction cost, it is not constant, and it widens sharply
+at exactly the moments a news-reactive strategy wants to trade. A backtest that assumes a
+fixed spread does not make a small conservative error; it makes an error concentrated
+entirely in the trades it depends upon.</p>
+</section>
+
+<section id="significance">
+<h2><span class="sec-num">3</span> Why it is worth solving</h2>
+
+<h3>3.1 The canonical demonstration</h3>
+<p>The strongest existing evidence that real-time data changes conclusions rather than
+merely refining them comes from monetary economics. Orphanides (2001) re-examined
+Taylor-rule characterisations of US monetary policy using the data policymakers actually
+had at each meeting rather than the revised series available to later researchers. The
+substantive conclusions changed. Policy that appears mistaken with hindsight can appear
+reasonable given contemporaneous information, and estimated rules differ materially.</p>
+
+<p>That result is the template for this project's claim. Orphanides did not show that
+real-time data is a hygiene improvement. He showed that using it or not
+<em>determines the answer</em>. This project asks the analogous question for trading
+strategy evaluation, and — unlike Orphanides, who was answering a substantive economic
+question — treats the size of the discrepancy as the object of interest in its own
+right.</p>
+
+<h3>3.2 The replication problem in empirical finance</h3>
+<p>Empirical asset pricing has a well-documented reliability problem. Harvey, Liu and Zhu
+(2016) argue that, given the number of factors tested against the same data, conventional
+significance thresholds are far too permissive and a large share of published factors are
+likely false discoveries. Hou, Xue and Zhang (2020) attempt to replicate several hundred
+documented anomalies under uniform methodology and find that a majority do not survive.
+Bailey, Borwein, López de Prado and Zhu (2014) show how readily backtest overfitting
+manufactures impressive out-of-sample-looking results from noise.</p>
+
+<p>Multiple testing is the usual explanation, and it is a real one. But it is not the only
+one, and the two are confounded in the existing literature: a result that survives
+correction for multiple testing may still rest on data the strategy could not have had.
+Isolating the data-contamination component requires holding the strategy fixed and varying
+only the information regime — which is exactly the design in §9.</p>
+
+<h3>3.3 The practical stake</h3>
+<p>Capital is allocated on the strength of backtests. The difference between a reported
+Sharpe ratio of 1.5 and a realisable one of 0.3 is not an academic curiosity; it is the
+difference between a strategy that funds a desk and one that quietly loses money for two
+years before being cut. Any tool that converts "your backtest is probably optimistic" into
+"your backtest is optimistic by approximately this much, from these sources" changes the
+conversation from an argument about diligence into an argument about a number.</p>
+</section>
+
+<section id="question">
+<h2><span class="sec-num">4</span> Research question and contribution</h2>
+
+<p class="statement">Holding the trading rule, the instrument, and the sample fixed, how
+much of a reported backtest result is attributable to each individual source of
+information contamination?</p>
+
+<p>The intended contributions are three, in decreasing order of novelty.</p>
+
+<ol class="prose-list">
+  <li><strong>A decomposition, not a binary.</strong> The literature treats point-in-time
+    discipline as a methodological requirement that a study either satisfies or does not.
+    This project treats each contamination channel as a quantity with a measurable price,
+    reported in Sharpe units and basis points.</li>
+  <li><strong>An enforcement mechanism rather than a convention.</strong> The database is
+    accompanied by an acceptance suite written <em>before</em> the pipeline, against an
+    empty schema, and expected to fail. Point-in-time correctness becomes a property that
+    is continuously tested rather than a claim made in a methods section.</li>
+  <li><strong>A measured account of free FX data quality.</strong> Two independent feeds
+    are ingested and reconciled, and the disagreement rate is published rather than
+    resolved. The distribution of tick pathologies by hour and instrument is a secondary
+    empirical output.</li>
+</ol>
+</section>
+
+<section id="alternatives">
+<h2><span class="sec-num">5</span> Why this design and not another</h2>
+
+<p>Several routes lead to a defensible answer. The choice among them was driven by what
+each would leave the researcher able to say afterwards.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Approach</th><th>Why not</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>License a commercial point-in-time database</strong></td>
+      <td>Fastest route to clean vintages, and the wrong instrument for this question. It
+        requires paid registration, and more importantly it relocates the guarantee into a
+        vendor's black box. One would be measuring contamination while trusting an
+        unexamined claim that the control arm is uncontaminated — and would learn nothing
+        about the mechanism being studied.</td>
+    </tr>
+    <tr>
+      <td><strong>Simulate revisions synthetically</strong></td>
+      <td>Tractable and fully controlled, but it presupposes the answer. Revision processes
+        would have to be modelled, and Aruoba (2008) shows real revisions are biased and
+        predictable in ways a plausible noise model would not reproduce. The magnitudes are
+        empirical, so synthetic data can only return the assumptions fed into it.</td>
+    </tr>
+    <tr>
+      <td><strong>Careful coding without enforcement</strong></td>
+      <td>The defining property of this failure is that it is silent. A convention that
+        depends on the researcher remembering it, in a codebase they will return to in six
+        months, is not a control. This is why the acceptance suite precedes the pipeline
+        rather than following it.</td>
+    </tr>
+    <tr>
+      <td><strong>Study equities instead</strong></td>
+      <td>A far larger cross-section and better statistical power, but dominated by
+        confounds this project is not trying to study: survivorship bias, delisting
+        returns, corporate actions, index reconstitution. Isolating revision timing amid
+        those would be a different and harder paper. Free equity tick data with genuine
+        bid and ask is also not available.</td>
+    </tr>
+    <tr>
+      <td><strong>A single "correct" backtest, reported honestly</strong></td>
+      <td>The obvious approach, and it yields one number with nothing to compare it to. A
+        Sharpe of 0.31 is uninterpretable alone. The contribution comes entirely from the
+        <em>differences</em> between regimes, which requires running the contaminated
+        variants deliberately.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>The last row is the design's central move and its most counter-intuitive: the project
+deliberately constructs backtests it knows to be wrong. The dishonest variants are not
+strawmen to be dismissed — they are the measuring instrument. Each is a faithful
+reproduction of a mistake that appears in real research, and the gap it opens against the
+honest variant is the quantity being estimated.</p>
+</section>
+
+<section id="why-fx">
+<h2><span class="sec-num">6</span> Why foreign exchange</h2>
+
+<p>FX is an unusual choice for a study of macroeconomic data contamination, and the reasons
+are practical rather than doctrinal.</p>
+
+<ul class="prose-list">
+  <li><strong>Free tick data with separate bid and ask actually exists.</strong> This is
+    rare and it is decisive. Measuring the cost of the mid-price assumption requires having
+    the real spread to compare against. Most free price histories make that impossible by
+    construction.</li>
+  <li><strong>Macroeconomic releases are scheduled to the second and dominate short-horizon
+    moves.</strong> The identification is clean: a known instant, a known surprise, a
+    liquid instrument reacting immediately.</li>
+  <li><strong>The market trades continuously from Sunday evening to Friday evening.</strong>
+    There is no overnight close, so the timestamp-coarsening effect can be measured without
+    an overnight-gap confound contaminating it.</li>
+  <li><strong>The cross-section is small.</strong> Roughly eight major pairs, against
+    thousands of equities. For a study whose experimental variable is the data regime
+    rather than the instrument, a narrow universe reduces the multiple-testing surface
+    inside the experiment itself.</li>
+</ul>
+
+<p>The small cross-section is also a genuine cost, and it cuts the opposite way from
+intuition. Fewer instruments means <em>less</em> statistical power, which makes overfitting
+risk <em>higher</em>, not lower. Multiple-testing correction matters more in this setting,
+not less — and any strategy-level finding here is correspondingly weaker than the same
+finding in equities would be.</p>
+
+<p>One structural concession is unavoidable. There is no consolidated tape in foreign
+exchange: no canonical price, only each venue's own view. Every result is therefore
+conditional on the feed that produced it. This is why a second independent feed is ingested
+and the disagreement rate published rather than reconciled — it converts an
+unacknowledgeable weakness into a measured quantity.</p>
+</section>
+
+<section id="origin">
+<h2><span class="sec-num">7</span> How the project took its present shape</h2>
+
+<p>The project began from a narrow observation about asymmetry.</p>
+
+<p>Detecting look-ahead bias in someone else's work turns out to require only two
+questions: <em>did you use the first published value or the revised series?</em> and
+<em>did you enter at the release timestamp or at a daily open?</em> Both take seconds to
+ask. The answers are usually involuntary — a researcher who says "I pulled it from FRED"
+has answered the first question without realising a question was asked.</p>
+
+<p>The asymmetry is that <strong>evaluating the answer is much harder than asking the
+question.</strong> Told that revisions exist but are too small to matter for a given
+series, one has no basis to agree or disagree without knowing the magnitudes. For payrolls
+they run to the hundreds of thousands; for some series they are genuinely negligible.
+The published literature establishes that revisions are consequential for
+<em>inference</em> (Orphanides, Aruoba) but not what they are worth to a
+<em>simulated trading result</em>, which is the currency in which the argument is
+usually conducted.</p>
+
+<p>That gap defined the project. Building a point-in-time database was never the objective;
+it is the apparatus required to run the measurement. The design followed from asking what
+the smallest system capable of producing that number would be — which is why the scope is
+deliberately narrow, why strategy code is confined to the final phase, and why the
+acceptance tests were written before any pipeline existed.</p>
+
+<p>An early decision was to choose among three research horizons: intraday, multi-day
+carry, or both at reduced scope. Multi-day carry was rejected on a hard constraint —
+forward points have no free source, and the available proxy (policy-rate differentials)
+carries an error correlated with funding stress, which is exactly when carry strategies
+matter. Building a study whose central input is knowingly broken at the decisive moments
+was not defensible. The intraday horizon was adopted with a narrowed instrument universe.</p>
+</section>
+
+<section id="method">
+<h2><span class="sec-num">8</span> Method</h2>
+
+<h3>8.1 The bitemporal principle</h3>
+<p>Every fact carries two independent time axes. <code>ref_period</code> is the period the
+value describes; <code>known_at</code> is the instant it became publicly available. A
+point-in-time query filters <code>known_at &lt;= t</code> and retains the latest
+<code>known_at</code> per key, returning what was believed at <span class="mono">t</span>
+rather than what later proved true. Revisions then require no special handling — they fall
+out of the filter.</p>
+
+<p>Two properties are load-bearing. Both axes must be present: a table carrying only
+<code>ref_period</code> is not point-in-time and cannot be made so retroactively, because
+the information was never recorded. And <code>known_at</code> must be a timestamp with time
+zone, never a date — an 08:30 release and an 08:31 price are distinct objects, and
+collapsing them destroys the very effect §9 sets out to measure.</p>
+
+<h3>8.2 Storage</h3>
+<p>Three tiers, because the data has two incompatible shapes. Reference data and macro
+vintages are relational, small, and require integrity constraints (PostgreSQL). Tick data
+is append-only, immutable, and projected at billions of rows (ClickHouse). The research
+query layer is in-process and reads from both (DuckDB). The single most important
+architectural rule is that <code>as_of(t)</code> in the query layer is the
+<em>only</em> sanctioned read path; convenience accessors that reach past it into the
+storage tiers are how contamination re-enters a system that had eliminated it.</p>
+
+<h3>8.3 Raw data is immutable; cleaning is additive</h3>
+<p>Ticks are never modified after ingestion and never transformed during it. Quality
+detectors write to a separate flag table rather than correcting or deleting rows. A
+detector later found to be wrong is corrected by deleting its flags and re-running, not by
+re-acquiring several hundred gigabytes. This also preserves the pathologies themselves as
+an object of study: the distribution of crossed quotes, stale quotes and spread outliers by
+hour is a secondary result rather than debris.</p>
+
+<h3>8.4 Verification precedes construction</h3>
+<p>Four families of acceptance test — no-clairvoyance, revision, tick sanity, cross-feed —
+were written against an empty schema before any pipeline code, and currently fail. The red
+suite is the intended state: each test states a guarantee the system does not yet provide,
+and each failure is required to be attributable to the guarantee being absent rather than
+to an unrelated defect.</p>
+
+<p>This functions as the project's analogue of pre-registration. The tests specify what
+correct behaviour looks like at a moment when there is no implementation to rationalise
+around, which removes the possibility of tests that encode what the pipeline happens to do
+rather than what it must do.</p>
+</section>
+
+<section id="experiment">
+<h2><span class="sec-num">9</span> The experiment</h2>
+
+<p>One rule, pre-registered before results are examined, evaluated under four data regimes
+that differ only in what the simulation may know. The candidate rule is a directional
+position in EURUSD held for a fixed horizon of several minutes following a US CPI or
+payrolls release, conditioned on the sign of the surprise.</p>
+
+<p>The rule is deliberately dull. It is not expected to be profitable and its profitability
+is not the object of measurement — an interesting rule would invite tuning, and tuning
+would reintroduce exactly the selection effects the design exists to isolate.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variant</th><th>Macro value</th><th>Timing</th><th>Execution cost</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A — Honest</strong></td><td>First print, as of release</td>
+        <td>Exact release timestamp</td><td>Prevailing bid/ask</td></tr>
+    <tr><td><strong>B — Revised</strong></td><td>Final revised value</td>
+        <td>Exact release timestamp</td><td>Prevailing bid/ask</td></tr>
+    <tr><td><strong>C — Revised, date-only</strong></td><td>Final revised value</td>
+        <td>Date only; entry at day open</td><td>Prevailing bid/ask</td></tr>
+    <tr><td><strong>D — Revised, date-only, mid</strong></td><td>Final revised value</td>
+        <td>Date only</td><td>Mid price, no spread</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Each successive variant adds one advantage that was unavailable in reality, so that
+each adjacent difference isolates a single channel:</p>
+
+<ul class="prose-list">
+  <li><strong>A → B</strong> prices revision leakage.</li>
+  <li><strong>B → C</strong> prices timestamp coarsening.</li>
+  <li><strong>C → D</strong> prices the mid-price assumption.</li>
+</ul>
+
+<p>Variant A is the control and the only regime corresponding to information a trader
+could have acted upon. The estimand is the set of differences, not the levels; the level of
+A is of little interest and is not expected to be attractive.</p>
+</section>
+
+<section id="expected">
+<h2><span class="sec-num">10</span> Expected results</h2>
+
+<p>These are hypotheses recorded in advance, not predictions offered with confidence.
+Several may prove wrong, and being wrong is a legitimate and reportable outcome. They are
+stated here so that confirmation bias is harder to exercise later.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>ID</th><th>Hypothesis</th><th>Confidence</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">H1</td>
+        <td>Reported Sharpe ratios order D &gt; C &gt; B &gt; A. Each variant strictly adds
+          an information or cost advantage unavailable in reality.</td>
+        <td>High</td></tr>
+    <tr><td class="mono">H2</td>
+        <td>The mid-price assumption is the single largest contributor to the A→D gap,
+          because the rule is short-horizon and trades in a window where spreads widen.</td>
+        <td>Moderate</td></tr>
+    <tr><td class="mono">H3</td>
+        <td>Timestamp coarsening (B→C) exceeds revision leakage (A→B). Strongly dependent
+          on holding period; likely reversed at multi-day horizons.</td>
+        <td>Moderate to low</td></tr>
+    <tr><td class="mono">H4</td>
+        <td>Cross-feed disagreement is non-trivial and clusters around rollover, releases
+          and thin holiday sessions.</td>
+        <td>High on existence, low on magnitude</td></tr>
+    <tr><td class="mono">H5</td>
+        <td>The share of ticks carrying a quality flag is higher than commonly assumed and
+          concentrates in identifiable hours.</td>
+        <td>Moderate</td></tr>
+    <tr><td class="mono">H6</td>
+        <td>The two-to-three week windows in which US and EU daylight-saving transitions
+          are misaligned show measurably different session-overlap behaviour.</td>
+        <td>High that the artefact exists; unknown whether it is economically meaningful</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>H2 is the hypothesis most exposed to falsification and therefore the most informative.
+If revision leakage dominates the spread effect instead, that inverts the usual practitioner
+intuition that execution assumptions are the primary source of backtest inflation, and
+should be reported prominently rather than buried.</p>
+</section>
+
+<section id="limitations">
+<h2><span class="sec-num">11</span> Limitations</h2>
+
+<p>The following are structural. They cannot be engineered away within the project's
+constraints, and they are stated here rather than left to be discovered by a reader.</p>
+
+<ol class="prose-list">
+  <li><strong>No consolidated tape.</strong> There is no canonical FX price. The primary
+    feed is one venue's aggregated view, and another broker's tape will differ, especially
+    in the tails and around rollover. Every result is conditional on this feed.</li>
+  <li><strong>Reported volume is not market volume.</strong> The volume field reflects the
+    provider's own pool. Nothing is built on it.</li>
+  <li><strong>Small cross-section.</strong> Roughly eight majors. Less statistical power,
+    hence higher overfitting risk, and multiple-testing correction matters more rather than
+    less.</li>
+  <li><strong>No free historical consensus forecasts.</strong> Surprise measures must be
+    constructed from revisions or from a synthetic forecast, and that choice affects
+    results. Where a synthetic forecast is used it is labelled as such.</li>
+  <li><strong>No forward points.</strong> Any carry extension must proxy with policy-rate
+    differentials, and covered interest parity has failed persistently since 2008 (Du,
+    Tepper and Verdelhan, 2018), so the proxy error correlates with funding stress.</li>
+  <li><strong>Vintage timing is date-granular at source.</strong> Archival macro sources
+    record the date a value became known, not the time. Release times must be joined from
+    published agency schedules, and where a time cannot be sourced it is recorded as
+    explicitly unknown rather than assumed.</li>
+  <li><strong>Retail execution assumptions.</strong> Even with genuine bid and ask, the
+    data does not capture slippage, rejection, requoting or last-look behaviour. Simulated
+    fills remain optimistic by an unmeasured amount — which means variant A is itself a
+    conservative upper bound on honesty, not a perfectly clean control.</li>
+</ol>
+
+<p>The last point deserves emphasis. This project measures the distance between four
+degrees of contamination; it does not claim that the least contaminated of them is
+uncontaminated. The absolute level of variant A should not be read as an achievable
+result.</p>
+</section>
+
+<section id="disclaim">
+<h2><span class="sec-num">12</span> What this project does not claim</h2>
+<p>It does not produce a profitable trading strategy, and is not intended to. It is not a
+trading system: there is no execution, no order management, and no live component. It does
+not establish that any particular published result is contaminated. And it does not claim
+that its own control arm is free of look-ahead bias — only that its three comparison arms
+are contaminated in specified, deliberate, and individually measurable ways.</p>
+</section>
+
+<section id="references">
+<h2><span class="sec-num">13</span> References</h2>
+<p class="small muted">A working reading list rather than a complete bibliography; it will
+grow as the project proceeds.</p>
+<ol class="refs">
+  <li>Aruoba, S. B. (2008). Data Revisions Are Not Well Behaved.
+    <em>Journal of Money, Credit and Banking</em>, 40(2–3).
+    <span class="refs__note">Revisions to major US series are biased and predictable — the
+      basis for §2.3.</span></li>
+  <li>Bailey, D. H., Borwein, J. M., López de Prado, M., &amp; Zhu, Q. J. (2014).
+    Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on
+    Out-of-Sample Performance. <em>Notices of the American Mathematical Society</em>, 61(5).</li>
+  <li>Croushore, D., &amp; Stark, T. (2001). A Real-Time Data Set for Macroeconomists.
+    <em>Journal of Econometrics</em>, 105(1).
+    <span class="refs__note">The dataset this project's macro layer is built on.</span></li>
+  <li>Du, W., Tepper, A., &amp; Verdelhan, A. (2018). Deviations from Covered Interest Rate
+    Parity. <em>The Journal of Finance</em>, 73(3).
+    <span class="refs__note">Why the carry proxy error correlates with funding stress —
+      limitation 5.</span></li>
+  <li>Harvey, C. R., Liu, Y., &amp; Zhu, H. (2016). …and the Cross-Section of Expected
+    Returns. <em>The Review of Financial Studies</em>, 29(1).</li>
+  <li>Hou, K., Xue, C., &amp; Zhang, L. (2020). Replicating Anomalies.
+    <em>The Review of Financial Studies</em>, 33(5).</li>
+  <li>Orphanides, A. (2001). Monetary Policy Rules Based on Real-Time Data.
+    <em>American Economic Review</em>, 91(4).
+    <span class="refs__note">The canonical demonstration that real-time data changes
+      conclusions rather than refining them — §3.1.</span></li>
+</ol>
+</section>
+
+<footer class="paper__foot">
+  <p class="small muted">This is a working prospectus for a project in progress, not a
+    finished paper. Phase 0 of seven is complete; the experiment in §9 has not been run,
+    and every figure attributed to it elsewhere in this application is synthetic and
+    labelled as such. Specification and phase detail:
+    <a href="/status">project status</a>.</p>
+</footer>
+
+</article>
+{% endblock %}

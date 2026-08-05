@@ -25,8 +25,11 @@
       as of a historical timestamp.</p>
 
     <nav class="nav">
-      <a class="nav__item {% if active is none %}nav__item--active{% endif %}" href="/">
-        <span class="nav__num">--</span> Overview
+      <a class="nav__item {% if active == 'research' %}nav__item--active{% endif %}" href="/">
+        <span class="nav__num">§</span> Research prospectus
+      </a>
+      <a class="nav__item {% if active == 'status' %}nav__item--active{% endif %}" href="/status">
+        <span class="nav__num">--</span> Project status
       </a>
 
       <div class="nav__label">Phases</div>

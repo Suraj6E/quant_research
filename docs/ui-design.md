@@ -99,7 +99,34 @@ chore.
 
 ## 3. Information architecture
 
-One page per phase, plus an overview. Phase pages share a fixed spine:
+**The prospectus is the front door; the dashboard is the instrument.**
+
+`/` is a research prospectus — a reading document in paper form (abstract,
+numbered sections, hypotheses, references). `/status` is the operational
+dashboard. `/phase/N` are the seven phase pages.
+
+That ordering is deliberate. A reader arriving cold at a panel of Sharpe ratios
+has no way to judge whether the numbers matter, because the interesting claim
+is not any single figure but the *differences* between four regimes — and that
+only makes sense after the problem has been stated. Leading with a status board
+would present an instrument to someone who does not yet know what is being
+measured.
+
+The prospectus carries its own visual register: 44rem measure, 16px base,
+section numbering, a table of contents, and pull-quotes. Those cues tell a
+reader to settle in rather than scan. It shares the token system with the
+dashboard but almost none of its components — a document and a dashboard are
+different reading modes and should not look interchangeable.
+
+Its argument structure is a real paper's, not a FAQ: problem → why it persists
+→ why it matters → research question → rejected alternatives → why FX → origin
+→ method → experiment → expected results → limitations → what is not claimed →
+references. The rejected-alternatives section (§5) is load-bearing rather than
+decorative; a design is only defensible against the options it beat.
+
+### Phase pages
+
+Phase pages share a fixed spine:
 
 1. **What this phase does** — plain prose, no jargon
 2. **Exit criterion** — quoted from `planning.md`, with a status pill
@@ -231,7 +258,8 @@ Verified automatically:
 
 | Check | Result |
 |---|---|
-| All 8 pages + 2 API routes return 200 | pass |
+| All 9 pages + 2 API routes return 200 | pass |
+| Prospectus: 13 sections, 12 TOC entries, no broken anchors | pass |
 | No unrendered template tags or leaked errors | pass |
 | Every chart has a table view | pass |
 | Every DEMO badge has a matching hatched card | pass |

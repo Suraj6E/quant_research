@@ -75,13 +75,31 @@ def ctx(**kw) -> dict:
 
 
 @app.get("/", response_class=HTMLResponse)
+def research(request: Request):
+    """The prospectus is the front door; the dashboard is the instrument.
+
+    A reader arriving cold needs the problem and the argument before any panel
+    of numbers means anything.
+    """
+    timeline = step_timeline(
+        live.RECORDED_PAYEMS_VINTAGES,
+        places=0,
+        unit="k",
+        caption="US nonfarm payrolls, reference period January 2024, by vintage",
+    )
+    return templates.TemplateResponse(
+        request, "research.html", ctx(active="research", timeline=timeline)
+    )
+
+
+@app.get("/status", response_class=HTMLResponse)
 def overview(request: Request):
     results = live.run_tests()
     return templates.TemplateResponse(
         request,
         "overview.html",
         ctx(
-            active=None,
+            active="status",
             results=results,
             containers=live.docker_status(),
             checks=live.RECORDED_SOURCE_CHECKS,

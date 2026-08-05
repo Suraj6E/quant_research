@@ -281,6 +281,100 @@ tbody tr:last-child td { border-bottom: none; }
 
 .phase-state { font-size: 11px; margin-left: auto; }
 
+/* ------------------------------------------------- long-form paper view */
+/* The prospectus is a reading document, not a dashboard. It gets a narrower
+   measure, a larger base size, and real section numbering — the visual cues
+   that tell a reader to settle in rather than scan. */
+
+.paper { max-width: 44rem; font-size: 16px; line-height: 1.68; }
+.paper p { margin: 0 0 1.05em; }
+
+.paper__head { margin-bottom: 34px; padding-bottom: 22px; border-bottom: 2px solid var(--border); }
+.paper__kicker {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-muted); font-weight: 650; margin: 0 0 10px;
+}
+.paper__head h1 {
+  font-size: 34px; font-weight: 660; letter-spacing: -.025em;
+  line-height: 1.18; margin: 0 0 10px;
+}
+.paper__subtitle {
+  font-size: 17.5px; color: var(--text-secondary); line-height: 1.42;
+  margin: 0 0 16px !important; font-weight: 420;
+}
+.paper__meta { font-size: 12.5px; color: var(--text-muted); margin: 0 !important; }
+
+.abstract {
+  background: var(--surface-2); border-radius: var(--radius);
+  padding: 20px 24px; margin-bottom: 30px;
+}
+.abstract h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-muted); font-weight: 650; margin: 0 0 10px;
+}
+.abstract p { font-size: 15px; margin-bottom: .9em; }
+.abstract p:last-child { margin-bottom: 0; }
+
+.paper__toc {
+  border-left: 2px solid var(--border); padding-left: 18px; margin-bottom: 38px;
+}
+.paper__toc ol { margin: 0; padding-left: 18px; }
+.paper__toc li { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 3px; }
+.paper__toc a { color: var(--text-secondary); text-decoration: none; }
+.paper__toc a:hover { color: var(--series-1); text-decoration: underline; }
+
+.paper section { margin-bottom: 40px; scroll-margin-top: 20px; }
+.paper h2 {
+  font-size: 22px; font-weight: 640; letter-spacing: -.015em;
+  margin: 0 0 16px; padding-top: 6px;
+}
+.paper h3 {
+  font-size: 15.5px; font-weight: 640; margin: 26px 0 10px;
+  color: var(--text-primary);
+}
+.sec-num {
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+  margin-right: 10px; font-weight: 560;
+}
+
+.prose-list { padding-left: 22px; margin: 0 0 1.05em; }
+.prose-list li { margin-bottom: .6em; }
+
+/* A claim set apart because it is the thesis, not because it is decorative. */
+.statement {
+  font-size: 17px; line-height: 1.5; font-weight: 500;
+  border-left: 3px solid var(--series-1); padding: 4px 0 4px 18px;
+  margin: 4px 0 20px !important; color: var(--text-primary);
+}
+.pull {
+  font-size: 16.5px; line-height: 1.5; color: var(--text-secondary);
+  border-left: 3px solid var(--border); padding-left: 18px;
+  margin: 22px 0 !important; font-style: italic;
+}
+
+.paper code {
+  font-family: var(--mono); font-size: .87em;
+  background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+}
+.paper .card { margin: 22px 0; }
+.paper table { font-size: 14px; }
+.paper td { padding: 10px 14px 10px 0; vertical-align: top; }
+
+.refs { padding-left: 22px; margin: 0; font-size: 14px; }
+.refs li { margin-bottom: 12px; line-height: 1.5; }
+.refs__note {
+  display: block; font-size: 12.5px; color: var(--text-muted); margin-top: 2px;
+}
+
+.paper__foot {
+  margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .paper { font-size: 15.5px; }
+  .paper__head h1 { font-size: 27px; }
+}
+
 /* ------------------------------------------------------------ utilities */
 
 .mono { font-family: var(--mono); font-size: 12.5px; }
