@@ -18,7 +18,6 @@ Deleting this module is a project milestone, not a chore.
 from __future__ import annotations
 
 import random
-from datetime import date, timedelta
 
 SEED = 20260804
 
@@ -46,57 +45,10 @@ def _rng(salt: str) -> random.Random:
 # Deleting rather than commenting out is deliberate — see the Phase 1 note.
 
 
-def spread_by_hour() -> tuple[list[str], list[tuple[str, list[float]]]]:
-    """Median spread in pips by hour for three pairs. One axis, three series -
-    within the validated all-pairs limit.
-    """
-    rng = _rng("spread")
-    hours = [f"{h:02d}" for h in range(24)]
-    out = []
-    for inst, floor in (("EURUSD", 0.18), ("GBPUSD", 0.34), ("USDJPY", 0.26)):
-        vals = []
-        for h in range(24):
-            v = floor + rng.uniform(0, 0.06)
-            if h in (21, 22):
-                v *= rng.uniform(3.4, 4.6)          # rollover widening
-            elif h in (0, 1, 2):
-                v *= rng.uniform(1.5, 2.1)          # thin Asia session
-            elif 7 <= h <= 16:
-                v *= rng.uniform(0.85, 1.0)         # London/NY overlap
-            vals.append(round(v, 3))
-        out.append((inst, vals))
-    return hours, out
-
-
-# Phase 4's generators (session_windows, rollover_windows) were DELETED on
-# 2026-08-05 when the real calendar landed. The panels now read the session
-# tables via fxpit.web.live.
-
-
-def cross_feed_reconciliation() -> tuple[list[str], list[float]]:
-    """Disagreement rate between Dukascopy and HistData by month, in basis
-    points of bars compared. Success criterion #3 is that this number exists
-    and is documented - not that it is small.
-    """
-    rng = _rng("recon")
-    months = [f"2024-{m:02d}" for m in range(1, 13)]
-    return months, [round(rng.uniform(18, 47), 1) for _ in months]
-
-
-def tick_rate_anomalies() -> tuple[list[str], list[tuple[str, list[float]]]]:
-    """Ticks per minute over a day. A sudden drop usually means a feed gap,
-    not a quiet market - which is why this is monitored rather than assumed.
-    """
-    rng = _rng("tickrate")
-    start = date(2024, 1, 9)
-    labels = [(start + timedelta(days=i)).isoformat()[5:] for i in range(14)]
-    vals = []
-    for i in range(14):
-        v = rng.uniform(1150, 1450)
-        if i == 8:
-            v *= 0.21          # the gap this panel exists to catch
-        vals.append(round(v))
-    return labels, [("EURUSD ticks/min", vals)]
+# Phase 5's generators (spread_by_hour, cross_feed_reconciliation,
+# tick_rate_anomalies) were DELETED on 2026-08-05 when the validation
+# harness landed. Those panels now read the real monitors via
+# fxpit.web.live.
 
 
 def contamination_variants() -> list[dict]:

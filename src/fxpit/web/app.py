@@ -56,14 +56,14 @@ PHASES = [
         5,
         "Validation harness",
         "2 weeks",
-        "next",
+        "done",
         "Green scheduled suite plus a reconciliation report",
     ),
     (
         6,
         "Contamination experiment",
         "1-2 weeks",
-        "planned",
+        "next",
         "Each contamination source sized in bps or Sharpe units",
     ),
 ]
@@ -292,36 +292,52 @@ def phase4(request: Request):
 
 @app.get("/phase/5", response_class=HTMLResponse)
 def phase5(request: Request):
-    hours, series = demo.spread_by_hour()
-    spread = line_chart(
-        hours,
-        series,
-        unit=" pip",
-        places=3,
-        zero_base=True,
-        caption="Median spread by hour of day (UTC)",
-    )
-    months, rates = demo.cross_feed_reconciliation()
-    recon = bar_chart(
-        months,
-        rates,
-        unit=" bp",
-        places=1,
-        caption="Dukascopy vs HistData disagreement rate by month",
-    )
-    labels, tickrate = demo.tick_rate_anomalies()
-    anomaly = line_chart(
-        labels, tickrate, places=0, caption="EURUSD ticks per minute - the trough is a feed gap"
-    )
+    """Phase 5 reads real validation state. The demo generators this route used
+    to call were deleted when the harness landed.
+    """
+    spread_rows = live.spread_monitor()
+    drift = live.drift_observations(30)
+
+    spread_chart = None
+    if spread_rows:
+        by_hour: dict[int, list[float]] = {}
+        for r in spread_rows:
+            if r["instrument"] == "EURUSD":
+                by_hour.setdefault(int(r["hour_utc"]), []).append(float(r["median_spread"]))
+        if by_hour:
+            hours = sorted(by_hour)
+            spread_chart = line_chart(
+                [f"{h:02d}" for h in hours],
+                [("EURUSD median spread", [by_hour[h][0] * 10000 for h in hours])],
+                unit=" pip",
+                places=2,
+                zero_base=True,
+                caption="EURUSD median spread by hour of day (UTC)",
+            )
+
+    drift_chart = None
+    if len(drift) >= 2:
+        ordered = sorted(drift, key=lambda d: d["fix_date"])
+        drift_chart = bar_chart(
+            [str(d["fix_date"]) for d in ordered],
+            [float(d["diff_pips"]) for d in ordered],
+            unit=" pip",
+            places=2,
+            caption="Feed mid minus ECB fix, in pips, at the concertation instant",
+        )
+
     return templates.TemplateResponse(
         request,
         "phase5.html",
         ctx(
             active=5,
-            spread=spread,
-            recon=recon,
-            anomaly=anomaly,
-            series_names=[n for n, _ in series],
+            ecb=live.ecb_coverage(),
+            drift=drift,
+            drift_chart=drift_chart,
+            spread_rows=spread_rows[:24],
+            spread_chart=spread_chart,
+            tick_rates=live.tick_rate_monitor()[:12],
+            cross_feed=live.CROSS_FEED_STATUS,
         ),
     )
 

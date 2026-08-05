@@ -605,6 +605,79 @@ closed market — which is why the flag is `holiday_thin` and not `market_closed
 
 ---
 
+**COMPLETE 2026-08-05.** Implemented in `src/fxpit/validation/` and
+`.github/workflows/ci.yml`.
+
+**CI runs two jobs.** `fast` is unit tests with no services, seconds on every push.
+`stack` runs the whole suite against real Postgres and ClickHouse containers, plus daily on
+a schedule — because a point-in-time guarantee proved against fixtures is a weaker claim
+than the same guarantee proved against the real stores, and because a scheduled run is what
+catches an external source changing shape underneath the pipeline. That has now happened
+twice in this project.
+
+### The drift anchor
+
+**219,875 ECB reference rates loaded**, 41 currencies × 7,063 days, 1999-01-04 to
+2026-08-04. The comparison instant is the daily concertation procedure at **14:15
+Frankfurt** — 13:15 UTC in winter, 12:15 in summer — derived through the Phase 4 local-time
+machinery rather than written as a UTC constant. An anchor built to catch timezone bugs,
+itself containing one, would be the worst possible outcome.
+
+Against the ingested January 2024 sample the feed agrees with the fix to **−0.54 pips
+mean, 1.12 pips worst case**.
+
+**The anchor was then deliberately broken to check it has power:**
+
+| Offset applied | Mean diff | Verdict |
+|---|---|---|
+| none (correct) | −0.54 pips | within noise |
+| +1 h | 8.18 pips | **detected** |
+| −1 h | −1.40 pips | **missed** |
+| +5 h 45 m (the Phase 4 bug exactly) | 21.95 pips | **detected** |
+
+The −1 h miss is real and is reported rather than hidden: with only two overlapping
+observations the anchor lacks power in that direction. That is why it reports a trend
+rather than a verdict — a single day's difference means nothing, and what matters is
+whether the mean stays near zero as the sample grows. A test asserts the +1 h and +5 h 45 m
+cases and deliberately does **not** assert −1 h, because asserting it would claim a
+sensitivity the data does not support.
+
+The 5 h 45 m row is not hypothetical. It is exactly the Phase 4 export bug, on this
+machine's UTC+5:45 offset. This anchor would have caught it.
+
+**One bug found while building the anchor:** `Europe/Frankfurt` is not an IANA zone and
+raises `ZoneInfoNotFoundError`. The canonical CET zone is `Europe/Berlin`. A loud failure
+for once, and now pinned by a test.
+
+### Monitors
+
+Spread distribution by instrument-hour, reported as **median / p95 / max rather than a
+mean** — spreads are positive and heavy-tailed, so a mean is dragged by exactly the
+rollover and news spikes that matter. Tick rate as a **ratio to each instrument's median
+hour** rather than an absolute floor, because rates differ by an order of magnitude between
+instruments and sessions and an absolute threshold would flag every Asian hour while
+missing a real outage in London.
+
+### Success criterion #3 — PARTIALLY met, and said so
+
+> Two independent price feeds reconciled with a documented disagreement rate.
+
+**HistData is not retrievable programmatically.** Measured 2026-08-05: every download page
+returns the same 15,599-byte shell with no form and no token, and `get.php` returns HTTP
+500. The form is JavaScript-rendered, so retrieving it needs a headless browser — a
+materially larger dependency than the rest of the pipeline carries. §3.2's "no login
+required" was true about accounts and wrong about accessibility.
+
+**The ECB fix substitutes partially.** It is a genuine independent second opinion — it
+comes from somebody else's process and therefore cannot share a bug with this pipeline —
+and §3.2 already lists it under reconciliation. But it is daily, so it cannot produce the
+bar-by-bar disagreement *rate* an M1 feed would.
+
+`feed_disagreement` therefore remains the one detector of nine still blocked. The criterion
+is recorded as partially met rather than quietly redefined to fit what was achievable.
+
+---
+
 ### Phase 6 — The contamination experiment (1–2 weeks)
 
 This is the deliverable that makes the project worth putting on a CV.

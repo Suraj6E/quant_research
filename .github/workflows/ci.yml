@@ -1,0 +1,123 @@
+# Phase 5 — the acceptance suite in CI.
+#
+# Two jobs, deliberately separated.
+#
+#   fast   unit tests only, no services. Runs on every push in seconds and is
+#          what tells you a decoder or a DST rule broke.
+#   stack  the same suite plus the integration tests, against real Postgres and
+#          ClickHouse containers.
+#
+# The point of the second job is that a point-in-time guarantee proved against
+# fixtures is a weaker claim than the same guarantee proved against the real
+# stores. Phase 0's suite runs in both.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Daily. The suite is not only a regression check — running it against the
+    # live database on a schedule is what catches an external source changing
+    # shape underneath the pipeline.
+    - cron: "17 6 * * *"
+
+jobs:
+  fast:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev,web]"
+      - name: Lint
+        run: ruff check .
+      - name: Unit tests
+        run: pytest -m "not integration" -q
+
+  stack:
+    name: full suite against real stores
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fxpit
+          POSTGRES_USER: fxpit_admin
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+          TZ: UTC
+          PGTZ: UTC
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fxpit_admin -d fxpit"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        env:
+          CLICKHOUSE_DB: fxpit
+          CLICKHOUSE_USER: fxpit_admin
+          CLICKHOUSE_PASSWORD: ci_only_not_a_secret
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+          TZ: UTC
+        ports: ["8123:8123", "9000:9000"]
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+
+    env:
+      POSTGRES_DB: fxpit
+      POSTGRES_USER: fxpit_admin
+      POSTGRES_PASSWORD: ci_only_not_a_secret
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      CLICKHOUSE_DB: fxpit
+      CLICKHOUSE_USER: fxpit_admin
+      CLICKHOUSE_PASSWORD: ci_only_not_a_secret
+      CLICKHOUSE_HOST: localhost
+      CLICKHOUSE_HTTP_PORT: "8123"
+      DATA_ROOT: data
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev,web]"
+
+      - name: Apply schema
+        run: |
+          python - <<'PY'
+          import pathlib, psycopg, clickhouse_connect
+          from fxpit.config import settings
+          s = settings()
+          with psycopg.connect(s.pg_dsn) as c:
+              for f in sorted(pathlib.Path("infra/postgres/init").glob("*.sql")):
+                  c.execute(f.read_text(encoding="utf-8")); c.commit()
+                  print("applied", f.name)
+          ch = clickhouse_connect.get_client(
+              host=s.ch_host, port=s.ch_http_port,
+              username=s.ch_user, password=s.ch_password, database=s.ch_db)
+          for f in sorted(pathlib.Path("infra/clickhouse/init").glob("*.sql")):
+              body = "\n".join(l for l in f.read_text(encoding="utf-8").splitlines()
+                               if not l.strip().startswith("--"))
+              for stmt in (x.strip() for x in body.split(";")):
+                  if stmt:
+                      ch.command(stmt)
+              print("applied", f.name)
+          PY
+
+      - name: Build the session calendar
+        run: python -m fxpit.sessions --build --start 2024-01-01 --end 2025-01-01
+
+      - name: Full suite
+        # The acceptance families run here too. They were red by design until
+        # Phase 3; a red one now means a point-in-time guarantee regressed.
+        run: pytest -q
+
+      - name: Acceptance families must be green
+        run: pytest -m acceptance -q

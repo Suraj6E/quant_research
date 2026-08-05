@@ -5,56 +5,189 @@
 {% block content %}
 <div class="page-head">
   <h1>Phase 5 — Validation harness</h1>
-  <p>Wire the acceptance suite into CI against the real database, monitor spread
-     distributions and tick rates, and publish the cross-feed reconciliation report with a
-     tracked disagreement rate.</p>
+  <p>The acceptance suite in CI against real stores, spread and tick-rate monitoring, and
+     an independent drift anchor. The theme is that a check which cannot fail is
+     decoration — so each one here is tested for whether it would actually fire.</p>
 </div>
 
 <div class="callout">
-  <strong>Exit criterion:</strong> a green, scheduled suite plus a reconciliation report.
-  <span class="pill pill--neutral">planned</span>
+  <strong>Exit criterion:</strong> a green, scheduled test suite plus a reconciliation
+  report. <span class="pill pill--good">✓ met</span>
+  <span class="small muted">CI in <span class="mono">.github/workflows/ci.yml</span>: unit
+  tests on every push, full suite against real Postgres and ClickHouse containers, daily
+  on a schedule.</span>
 </div>
 
-<h2 class="section">Spread by session</h2>
-{{ m.card_open('Median spread by hour of day (UTC)', 'demo',
-    'Three pairs on one axis. Never two y-scales — the alignment of two scales is
-     arbitrary and invents a correlation that is not in the data.',
-    'Phase 5') }}
-{{ m.figure(spread, series_names=series_names) }}
-<p class="small muted" style="margin-top:6px">The rollover spike around 21:00–22:00 UTC and
-  the thin-Asia widening are the two shapes this panel exists to make visible. A strategy
-  backtested on average spread pays neither.</p>
+<h2 class="section">The drift anchor</h2>
+{{ m.card_open('Dukascopy mid vs the ECB reference fix', 'live',
+    'Compared at the concertation instant — 14:15 Frankfurt, which is 13:15 UTC in winter
+     and 12:15 in summer. Derived from local time, never written as a UTC constant.') }}
+{% if drift_chart %}{{ m.figure(drift_chart) }}{% endif %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Fix date</th><th>Anchor instant (UTC)</th><th class="num">Feed mid</th>
+             <th class="num">ECB fix</th><th class="num">Diff (pips)</th>
+             <th class="num">Ticks</th></tr></thead>
+  <tbody>
+  {% for o in drift %}
+    <tr><td class="mono small">{{ o.fix_date }}</td>
+        <td class="mono small">{{ o.anchor_ts.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="num">{{ '%.5f'|format(o.feed_mid) }}</td>
+        <td class="num">{{ '%.5f'|format(o.ecb_rate) }}</td>
+        <td class="num">{{ '%.2f'|format(o.diff_pips) }}</td>
+        <td class="num">{{ o.ticks_in_window }}</td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted small">No observations — run
+      <span class="mono">python -m fxpit.validation --load-ecb</span> then
+      <span class="mono">--drift</span>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small" style="margin-top:10px"><strong>Mid is used here on purpose</strong>, and
+  it is the one place in the project where that is correct. The ECB publishes a mid-market
+  reference rate, so a like-for-like comparison needs a mid. This is reconciliation, not
+  execution — nothing downstream trades on the number, and bars remain bid/ask throughout.</p>
+{{ m.card_close() }}
+
+{{ m.card_open('Does the anchor have power?', 'recorded',
+    'A validation check that cannot fail is decoration, so the anchor was deliberately
+     broken to see whether it notices.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Offset applied to the anchor instant</th><th class="num">Mean diff</th>
+             <th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td>none (correct)</td><td class="num">−0.54 pips</td>
+        <td><span class="pill pill--good">✓ within noise</span></td></tr>
+    <tr><td>+1 h — European DST mishandled</td><td class="num">8.18 pips</td>
+        <td><span class="pill pill--critical">✕ drift detected</span></td></tr>
+    <tr><td>−1 h — European DST mishandled</td><td class="num">−1.40 pips</td>
+        <td><span class="pill pill--warning">! missed</span></td></tr>
+    <tr><td>+5 h 45 m — the Phase 4 bug exactly</td><td class="num">21.95 pips</td>
+        <td><span class="pill pill--critical">✕ drift detected</span></td></tr>
+  </tbody>
+</table></div>
+<p class="small" style="margin-top:10px"><strong>The −1 h miss is real and is reported
+  rather than hidden.</strong> With only two overlapping observations the anchor lacks the
+  power to catch an error in that direction. That is precisely why it reports a trend
+  instead of a verdict: a single day's difference means nothing, and what matters is
+  whether the mean stays near zero as the sample grows.</p>
+<p class="small muted">The 5 h 45 m row is not hypothetical. Phase 4's calendar export
+  stripped <span class="mono">tzinfo</span>, the driver read the naive datetime as
+  machine-local, and on a UTC+5:45 machine every calendar hour shifted — making a detector
+  return zero flags instead of raising. This anchor would have caught it.</p>
 {{ m.card_close() }}
 
 <h2 class="section">Cross-feed reconciliation</h2>
-{{ m.card_open('Dukascopy vs HistData disagreement rate', 'demo',
-    'In basis points of bars compared. Success criterion #3 is that this number exists and
-     is documented — not that it is small.',
-    'Phase 5') }}
-{{ m.figure(recon) }}
-<p class="small" style="margin-top:6px">HistData is a <strong>second opinion, not a
-  fallback</strong>. Where two independent feeds disagree materially on the same bar, at
-  least one is wrong, and the rate is a data-quality finding in its own right. Anything
-  that quietly reconciles them destroys a deliverable rather than merely hiding a bug.</p>
-<p class="small muted">Hypothesis H4 predicts disagreement clusters around rollover, news
-  releases, and thin holiday sessions. High confidence it exists; the magnitude is
-  genuinely unknown and is one of the more interesting numbers this project will produce.</p>
+{{ m.card_open('Success criterion #3, honestly', 'recorded',
+    'Two independent price feeds reconciled with a documented disagreement rate. Status:
+     partially met.') }}
+<div class="stack">
+{% for f in cross_feed %}
+  <div style="border-bottom:1px solid var(--border);padding-bottom:12px">
+    <div class="row">
+      <strong>{{ f.feed }}</strong>
+      {% if f.verdict == 'available' %}<span class="pill pill--good">✓ available</span>
+      {% else %}<span class="pill pill--critical">✕ unavailable</span>{% endif %}
+    </div>
+    <p class="small muted" style="margin:6px 0 4px">{{ f.detail }}</p>
+    <p class="small" style="margin:0"><strong>Limit.</strong> {{ f.limit }}</p>
+  </div>
+{% endfor %}
+</div>
+<div class="callout callout--warn" style="margin-top:14px">
+  <strong>Partially met, and said so.</strong> The ECB comparison is a genuine independent
+  check — it comes from somebody else's process and therefore cannot share a bug with this
+  pipeline. But it is daily, so it cannot produce the bar-by-bar disagreement <em>rate</em>
+  an M1 second feed would. <span class="mono">feed_disagreement</span> remains the one
+  detector of nine still blocked.
+</div>
+{{ m.card_close() }}
+
+<h2 class="section">Spread monitoring</h2>
+{% if spread_chart %}
+{{ m.card_open('EURUSD median spread by hour', 'live',
+    'Read from tick_raw at page load.') }}
+{{ m.figure(spread_chart) }}
+{{ m.card_close() }}
+{% endif %}
+
+{{ m.card_open('Spread distribution by hour (UTC)', 'live',
+    'Quantiles, not means. Spreads are positive and heavy-tailed, so a mean is dragged by
+     exactly the rollover and news spikes that matter — and a strategy backtested on an
+     average spread pays neither the wide one nor the tight one.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Instrument</th><th class="num">Hour</th><th class="num">Ticks</th>
+             <th class="num">Median</th><th class="num">p95</th>
+             <th class="num">Max</th></tr></thead>
+  <tbody>
+  {% for r in spread_rows %}
+    <tr><td class="mono">{{ r.instrument }}</td>
+        <td class="num">{{ '%02d'|format(r.hour_utc) }}</td>
+        <td class="num">{{ '{:,}'.format(r.ticks) }}</td>
+        <td class="num">{{ r.median_spread }}</td>
+        <td class="num">{{ r.p95_spread }}</td>
+        <td class="num">{{ r.max_spread }}</td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted small">No ticks ingested.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
 {{ m.card_close() }}
 
 <h2 class="section">Tick-rate anomalies</h2>
-{{ m.card_open('EURUSD ticks per minute', 'demo',
+{{ m.card_open('Quietest hours, as a ratio to each instrument\'s median hour', 'live',
     'A sudden drop usually means a feed gap, not a quiet market — which is why it is
-     monitored rather than assumed.',
-    'Phase 5') }}
-{{ m.figure(anomaly) }}
+     monitored rather than assumed.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Instrument</th><th>Hour</th><th class="num">Ticks</th>
+             <th class="num">Ratio to median</th></tr></thead>
+  <tbody>
+  {% for r in tick_rates %}
+    <tr><td class="mono">{{ r.instrument }}</td>
+        <td class="mono small">{{ r.hour_start }}</td>
+        <td class="num">{{ '{:,}'.format(r.ticks) }}</td>
+        <td class="num">{% if r.ratio_to_median < 0.25 %}
+              <span class="pill pill--warning">{{ r.ratio_to_median }}</span>
+            {% else %}{{ r.ratio_to_median }}{% endif %}</td></tr>
+  {% else %}
+    <tr><td colspan="4" class="muted small">No ticks ingested.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small muted" style="margin-top:10px">Ratio to the median rather than an absolute
+  floor, because tick rates differ by an order of magnitude between instruments and
+  sessions. An absolute threshold would flag every Asian hour and miss a real outage in
+  London.</p>
 {{ m.card_close() }}
 
-<h2 class="section">The timezone anchor</h2>
-{{ m.card_open('ECB daily fix as a drift detector', 'recorded', '') }}
-<p class="small" style="margin:0">The ECB reference rate is a single point per day —
-  useless for trading, valuable as an anchor. If the reconstructed daily close diverges
-  systematically from the ECB fix over months, there is a timezone or session-boundary
-  bug. Silent timezone bugs are rated high-likelihood in the risk register, and this check
-  is specifically designed to catch them.</p>
+<h2 class="section">ECB reference rates</h2>
+{{ m.card_open('The independent source', 'live', '') }}
+<div class="grid grid--4">
+  {{ m.stat('Rates loaded', '{:,}'.format(ecb.get('rates', 0))) }}
+  {{ m.stat('Currencies', ecb.get('currencies', 0)) }}
+  {{ m.stat('Days', '{:,}'.format(ecb.get('days', 0))) }}
+  {{ m.stat('Covers', (ecb.get('first')|string)[:4] ~ '–' ~ (ecb.get('last')|string)[:4]) }}
+</div>
+<p class="small muted" style="margin-top:12px">Useless for trading — one point per day
+  supports no strategy. Valuable precisely because it is produced by somebody else, from a
+  different process, and therefore cannot share a bug with this pipeline.</p>
+{{ m.card_close() }}
+
+<h2 class="section">CI</h2>
+{{ m.card_open('Two jobs, deliberately separated', 'recorded', '') }}
+<div class="table-wrap"><table>
+  <tbody>
+    <tr><td style="width:22%"><span class="mono">fast</span></td>
+        <td class="small muted">Unit tests only, no services. Seconds on every push. This
+          is what tells you a decoder or a DST rule broke.</td></tr>
+    <tr><td><span class="mono">stack</span></td>
+        <td class="small muted">The same suite plus integration tests against real Postgres
+          and ClickHouse containers. A point-in-time guarantee proved against fixtures is a
+          weaker claim than the same guarantee proved against the real stores.</td></tr>
+    <tr><td>Schedule</td>
+        <td class="small muted">Daily. The suite is not only a regression check — running
+          it on a schedule is what catches an external source changing shape underneath
+          the pipeline, which has already happened twice in this project.</td></tr>
+  </tbody>
+</table></div>
 {{ m.card_close() }}
 {% endblock %}

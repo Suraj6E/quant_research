@@ -555,6 +555,78 @@ def holiday_caveats() -> dict[str, str]:
     return dict(hol.CAVEATS)
 
 
+# --------------------------------------------------------------------------
+# Phase 5 — real validation state.
+# --------------------------------------------------------------------------
+
+
+def ecb_coverage() -> dict:
+    try:
+        from fxpit.validation import harness
+
+        conn = harness.connect()
+        try:
+            return harness.ecb_coverage(conn)
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+
+def drift_observations(limit: int = 30) -> list[dict]:
+    try:
+        from fxpit.validation import harness
+
+        conn = harness.connect()
+        try:
+            return harness.drift_observations(conn, limit)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def spread_monitor() -> list[dict]:
+    try:
+        from fxpit.validation import harness
+
+        return harness.spread_by_hour()
+    except Exception:
+        return []
+
+
+def tick_rate_monitor() -> list[dict]:
+    try:
+        from fxpit.validation import harness
+
+        return harness.tick_rate_by_hour()
+    except Exception:
+        return []
+
+
+# The second-feed situation, measured rather than assumed.
+CROSS_FEED_STATUS = [
+    {
+        "feed": "ECB reference fix",
+        "verdict": "available",
+        "detail": "One official fix per currency per day since 1999, free, no account. "
+                  "219,875 rates across 41 currencies loaded.",
+        "limit": "Daily granularity. A genuine independent check, but it cannot measure "
+                 "a bar-by-bar disagreement RATE the way an M1 feed would.",
+    },
+    {
+        "feed": "HistData M1 bars",
+        "verdict": "unavailable",
+        "detail": "Measured 2026-08-05: every download page returns the same "
+                  "15,599-byte shell with no form and no token, and get.php returns "
+                  "HTTP 500. The form is JavaScript-rendered.",
+        "limit": "Retrieving it needs a headless browser, which is a materially larger "
+                 "dependency than the rest of the pipeline carries. Recorded as a "
+                 "verified negative rather than left as an assumption.",
+    },
+]
+
+
 def revised_period_count() -> int:
     """How many (series, ref_period) pairs actually got revised in the fixture."""
     by_key: dict[tuple[str, date], list] = {}

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phases 0–4 are complete; Phase 5 is next.**
+**Phases 0–5 are complete; Phase 6 is next.**
 
-**The whole suite is green: 86 passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
+**The whole suite is green: 100 passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
 
 Phase 0's test bodies have never been edited. `conftest.py` supplies the backing store they always assumed. Keep it that way.
 
@@ -169,3 +169,19 @@ python -m fxpit.sessions --dst 2024
 - **The mirror is hour buckets, not ranges**, because ClickHouse cannot join on inequality and has no correlated subqueries. Lossless only because every boundary falls on an hour — do not reuse that trick at tick scale.
 - **Pass timezone-aware UTC datetimes to clickhouse-connect.** Stripping `tzinfo` makes the driver read them as machine-local; on a UTC+5:45 machine that silently shifted every calendar hour to `:15` past and made a detector return zero flags instead of erroring. There is a regression test.
 - **A currency holiday means thin liquidity, not a closed market.** Keep the flag named `holiday_thin`. National holidays are a proxy, and EUR uses the German calendar because the euro area has no single one — both caveats are surfaced in the UI, not just in docstrings.
+
+
+## Phase 5 validation (src/fxpit/validation/)
+
+```powershell
+python -m fxpit.validation --load-ecb
+python -m fxpit.validation --drift --instrument EURUSD --start 2024-01-05 --end 2024-01-09
+python -m fxpit.validation --monitors
+python -m fxpit.validation --report
+```
+
+- **The concertation instant is derived, never a UTC constant.** 14:15 `Europe/Berlin` — 13:15 UTC in winter, 12:15 in summer. `Europe/Frankfurt` is not an IANA zone and raises; a test pins the working name.
+- **Mid is used in the drift anchor and only there.** The ECB publishes a mid-market reference, so like-for-like needs a mid. This is reconciliation, not execution — do not let it spread to bars or backtests.
+- **The anchor reports a trend, not a verdict.** One day's difference is noise. A test proves it catches +1h and +5h45m errors and deliberately does *not* assert the −1h case, because with the current sample it genuinely lacks that power. Do not add that assertion to make the suite look stronger.
+- **Only EUR-based pairs have a direct ECB anchor.** Anything else needs a cross, which carries both legs' error; `run_drift_anchor` refuses rather than silently crossing.
+- **Success criterion #3 is PARTIALLY met.** HistData is not retrievable without a headless browser (measured). Do not mark it complete or redefine the criterion — the honest status is recorded in planning.md and shown in the UI.
