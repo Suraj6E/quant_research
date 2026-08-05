@@ -104,6 +104,17 @@ def findings(request: Request):
     )
 
 
+@app.get("/review", response_class=HTMLResponse)
+def review(request: Request):
+    """An external review of the project, written 2026-08-06 by Fable 5.
+
+    The page is a RECORDED snapshot, not a live panel: it describes the
+    repository as it stood on the review date and does not update with the
+    code. The plain-text source is `review.md` at the repository root.
+    """
+    return templates.TemplateResponse(request, "review.html", ctx(active="review"))
+
+
 @app.get("/status", response_class=HTMLResponse)
 def overview(request: Request):
     results = live.run_tests()
