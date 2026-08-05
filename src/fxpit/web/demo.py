@@ -68,32 +68,9 @@ def spread_by_hour() -> tuple[list[str], list[tuple[str, list[float]]]]:
     return hours, out
 
 
-def session_windows() -> list[dict[str, str]]:
-    """DST-shifted session boundaries. The US and EU switch on different dates,
-    producing a two-to-three week window each spring and autumn where the
-    London-New York overlap is an hour different from normal.
-    """
-    return [
-        {"window": "2024-03-10 to 2024-03-30", "note": "US on DST, EU not yet",
-         "overlap": "12:00-16:00 UTC", "delta": "-1h", "status": "anomaly"},
-        {"window": "2024-03-31 to 2024-10-26", "note": "both on DST",
-         "overlap": "12:00-16:00 UTC", "delta": "normal", "status": "normal"},
-        {"window": "2024-10-27 to 2024-11-02", "note": "EU off DST, US still on",
-         "overlap": "13:00-17:00 UTC", "delta": "+1h", "status": "anomaly"},
-        {"window": "2024-11-03 to 2025-03-08", "note": "both off DST",
-         "overlap": "13:00-17:00 UTC", "delta": "normal", "status": "normal"},
-    ]
-
-
-def rollover_windows() -> list[dict[str, str]]:
-    return [
-        {"date": "2024-01-09", "start": "21:00 UTC", "end": "22:00 UTC",
-         "median_spread": "0.81 pip", "vs_baseline": "4.2x"},
-        {"date": "2024-01-10", "start": "21:00 UTC", "end": "22:00 UTC",
-         "median_spread": "0.77 pip", "vs_baseline": "3.9x"},
-        {"date": "2024-03-13", "start": "20:00 UTC", "end": "21:00 UTC",
-         "median_spread": "0.94 pip", "vs_baseline": "4.8x"},
-    ]
+# Phase 4's generators (session_windows, rollover_windows) were DELETED on
+# 2026-08-05 when the real calendar landed. The panels now read the session
+# tables via fxpit.web.live.
 
 
 def cross_feed_reconciliation() -> tuple[list[str], list[float]]:

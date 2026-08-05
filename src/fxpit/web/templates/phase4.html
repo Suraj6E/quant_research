@@ -5,86 +5,171 @@
 {% block content %}
 <div class="page-head">
   <h1>Phase 4 — Session and calendar layer</h1>
-  <p>FX week boundaries, DST handling, rollover windows, and per-currency holiday
-     calendars. Underrated, disproportionately interview-relevant, and — as Phase 0
-     discovered — a partial dependency of Phase 1 rather than a later add-on.</p>
+  <p>FX week boundaries, DST handling, rollover windows, and per-currency holidays.
+     Underrated, disproportionately interview-relevant, and — as Phase 0 discovered — a
+     dependency of Phase 1 rather than a later addition.</p>
 </div>
 
 <div class="callout">
   <strong>Exit criterion:</strong> for any timestamp, answer which session it falls in,
-  whether it is rollover, and whether it is a holiday for either leg of the pair.
-  <span class="pill pill--neutral">planned</span>
+  whether it is rollover, and whether it is a holiday for either leg.
+  <span class="pill pill--good">✓ met</span>
+  <span class="small muted"><span class="mono">python -m fxpit.sessions --describe
+  2024-01-08T22:30:00Z --pair EURUSD</span></span>
 </div>
 
-<div class="callout callout--warn" style="margin-top:14px">
-  <strong>Why this phase moved earlier.</strong> Dukascopy returns HTTP 200 with a 0-byte
-  body for closed sessions, not a 404. HTTP status therefore cannot distinguish
-  "market closed" from "feed gap" — only the session calendar can. Phase 1's coverage
-  report needs this.
-</div>
-
-<h2 class="section">DST offset windows</h2>
-{{ m.card_open('US and EU shift on different dates', 'demo',
-    'For two to three weeks each spring and autumn the London–New York overlap is an hour
-     different from normal. A recurring, genuine source of bugs.',
-    'Phase 4') }}
+<h2 class="section">The exit criterion, answered live</h2>
+{{ m.card_open('Five instants, four questions each', 'live',
+    'Each row is a real query against the session tables at page load.') }}
 <div class="table-wrap"><table>
-  <thead><tr><th>Window</th><th>Condition</th><th>Overlap</th><th>Delta</th></tr></thead>
+  <thead><tr><th>Timestamp</th><th></th><th>Market</th><th>Sessions</th>
+             <th>Rollover</th><th>Holiday</th></tr></thead>
   <tbody>
-  {% for w in windows %}
+  {% for r in moments %}
     <tr>
-      <td class="mono small">{{ w.window }}</td>
-      <td class="small muted">{{ w.note }}</td>
-      <td class="mono small">{{ w.overlap }}</td>
-      <td>{% if w.status == 'anomaly' %}<span class="pill pill--warning">! {{ w.delta }}</span>
-          {% else %}<span class="pill pill--neutral">{{ w.delta }}</span>{% endif %}</td>
+      <td class="mono small">{{ r.asked }}</td>
+      <td class="small muted">{{ r.note }}</td>
+      <td>{% if r.market_open %}<span class="pill pill--good">open</span>
+          {% else %}<span class="pill pill--warning">closed</span>{% endif %}</td>
+      <td class="small">{{ r.sessions|join(' + ') or '—' }}</td>
+      <td>{% if r.rollover %}<span class="pill pill--warning">yes</span>
+          {% else %}<span class="muted small">no</span>{% endif %}</td>
+      <td class="small">
+        {% for c, n in r.holidays.items() %}<span class="mono">{{ c }}</span> {{ n }}<br>
+        {% else %}<span class="muted">neither leg</span>{% endfor %}
+      </td>
     </tr>
-  {% endfor %}
-  </tbody>
-</table></div>
-<p class="small muted" style="margin-top:10px">Hypothesis H6 predicts these windows show
-  measurably different session-overlap behaviour. High confidence the artefact exists;
-  unknown whether it is economically meaningful.</p>
-{{ m.card_close() }}
-
-<h2 class="section">Rollover</h2>
-{{ m.card_open('Rollover windows and spread behaviour', 'demo',
-    'Approximately 21:00–22:00 UTC, moving with DST. Spreads widen sharply and the
-     widening is not noise — it is when swap is applied.',
-    'Phase 4') }}
-<div class="table-wrap"><table>
-  <thead><tr><th>Date</th><th>Start</th><th>End</th>
-             <th class="num">Median spread</th><th class="num">vs baseline</th></tr></thead>
-  <tbody>
-  {% for r in rollovers %}
-    <tr><td class="mono small">{{ r.date }}</td>
-        <td class="mono small">{{ r.start }}</td>
-        <td class="mono small">{{ r.end }}</td>
-        <td class="num">{{ r.median_spread }}</td>
-        <td class="num">{{ r.vs_baseline }}</td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted small">No session data — run
+      <span class="mono">python -m fxpit.sessions --build --start 2024-01-01
+      --end 2026-01-01</span>.</td></tr>
   {% endfor %}
   </tbody>
 </table></div>
 {{ m.card_close() }}
 
-<h2 class="section">What the session table must answer</h2>
-{{ m.card_open('Joinable to any timestamp', 'recorded', '') }}
+<h2 class="section">The DST anomaly, measured</h2>
+{{ m.card_open('London–New York overlap windows that are not four hours', 'live',
+    'Computed from local-time rules at page load, not tabulated — so it stays correct if
+     a jurisdiction changes its rules.') }}
 <div class="table-wrap"><table>
+  <thead><tr><th>Year</th><th>Window</th><th class="num">Trading days</th>
+             <th class="num">Overlap</th><th class="num">Normal</th>
+             <th class="num">Delta</th></tr></thead>
   <tbody>
-    <tr><td style="width:36%"><strong>Which session?</strong></td>
-        <td class="small muted">Sydney, Tokyo, London, New York — and the overlaps, which
-          are where liquidity concentrates.</td></tr>
-    <tr><td><strong>Is it rollover?</strong></td>
-        <td class="small muted">The window moves with DST, so it cannot be a fixed UTC
-          constant.</td></tr>
-    <tr><td><strong>Is it a holiday for either leg?</strong></td>
-        <td class="small muted">EURUSD on US Independence Day is a different instrument
-          from EURUSD on a normal Thursday. Both legs matter, not just the quote
-          currency.</td></tr>
-    <tr><td><strong>Is the market open at all?</strong></td>
-        <td class="small muted">Sunday open and Friday close move with DST. This is the
-          answer Phase 1 needs to tell an empty payload from a missing one.</td></tr>
+  {% for w in dst %}
+    <tr><td class="mono small">2024</td>
+        <td class="mono small">{{ w.start }} – {{ w.end }}</td>
+        <td class="num">{{ w.trading_days }}</td>
+        <td class="num">{{ w.overlap_hours }} h</td>
+        <td class="num">{{ w.normal_hours }} h</td>
+        <td class="num"><span class="pill pill--warning">{{ '%+g'|format(w.delta_hours) }} h</span></td></tr>
+  {% endfor %}
+  {% for w in dst2025 %}
+    <tr><td class="mono small">2025</td>
+        <td class="mono small">{{ w.start }} – {{ w.end }}</td>
+        <td class="num">{{ w.trading_days }}</td>
+        <td class="num">{{ w.overlap_hours }} h</td>
+        <td class="num">{{ w.normal_hours }} h</td>
+        <td class="num"><span class="pill pill--warning">{{ '%+g'|format(w.delta_hours) }} h</span></td></tr>
+  {% endfor %}
   </tbody>
 </table></div>
+<p class="small" style="margin-top:10px">The US springs forward on the second Sunday of
+  March and the EU on the last; in autumn the EU falls back first. For roughly
+  <strong>20 trading days a year the most liquid window of the FX day is an hour longer
+  than normal</strong> — and nothing in the code special-cases that. Sessions are defined
+  in local wall-clock time and converted to UTC, so daylight saving falls out of the
+  conversion.</p>
+<p class="small muted">This is the artefact hypothesis H6 predicts. Its existence is now
+  measured; whether it is economically meaningful is still open.</p>
+{{ m.card_close() }}
+
+<h2 class="section">What Phase 4 unblocked</h2>
+{{ m.card_open('Three things that were waiting on this', 'recorded', '') }}
+<div class="table-wrap"><table>
+  <tbody>
+    <tr><td style="width:26%"><span class="mono">weekend_gap</span></td>
+        <td class="small muted">Was blocked. Now asserts what <span class="mono">session_gap</span>
+          could not: this tick falls outside every FX trading week, so the market was
+          shut. Both detectors survive — one reports silence, the other its cause.</td></tr>
+    <tr><td><span class="mono">holiday_thin</span></td>
+        <td class="small muted">Was blocked. Now joins per-currency holidays for both legs
+          of the pair.</td></tr>
+    <tr><td><span class="mono">rollover_window</span></td>
+        <td class="small muted"><strong>Was live but wrong.</strong> It hardcoded 21:00 UTC,
+          which is 17:00 New York only in summer. Every winter tick — including the whole
+          January sample — was flagged an hour early. It now derives the window from
+          17:00 NY local time.</td></tr>
+    <tr><td>Phase 1 coverage</td>
+        <td class="small muted">Dukascopy returns HTTP 200 with a zero-byte body for both
+          "market closed" and "feed gap". Only the market calendar separates them.</td></tr>
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<div class="callout callout--warn" style="margin-top:16px">
+  <strong>A silent timezone bug, caught during this phase.</strong> The first calendar
+  export stripped <span class="mono">tzinfo</span> before inserting into ClickHouse, so the
+  driver read each naive datetime as machine-local and converted it. On a machine at
+  UTC+5:45 every calendar hour landed at <span class="mono">:15</span> past, the detector's
+  hour join matched nothing, and <span class="mono">rollover_window</span> returned
+  <strong>zero flags instead of raising</strong>. Plausible-looking wrong data, no error —
+  which <span class="mono">planning.md</span> rates as the highest-likelihood risk in the
+  project. It now has a regression test.
+</div>
+
+<h2 class="section">Coverage</h2>
+{{ m.card_open('What is built', 'live', '') }}
+<div class="grid grid--4">
+  {{ m.stat('Session windows', '{:,}'.format(coverage.get('sessions', 0)),
+            'four regions per day') }}
+  {{ m.stat('Market weeks', '{:,}'.format(coverage.get('markets', 0)),
+            'Sunday 17:00 NY to Friday 17:00 NY') }}
+  {{ m.stat('Rollover windows', '{:,}'.format(coverage.get('rollovers', 0)),
+            '17:00–18:00 New York') }}
+  {{ m.stat('Holidays', '{:,}'.format(coverage.get('holidays', 0)),
+            '{} currencies'.format(coverage.get('currencies', 0))) }}
+</div>
+{{ m.card_close() }}
+
+{{ m.card_open('Holidays by currency', 'live',
+    'From the `holidays` package — rules, not a downloaded dataset, so the
+     no-registration constraint holds.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Currency</th><th class="num">Days</th><th>Range</th></tr></thead>
+  <tbody>
+  {% for r in holidays %}
+    <tr><td class="mono">{{ r.currency }}</td>
+        <td class="num">{{ r.days }}</td>
+        <td class="mono small">{{ r.first }} – {{ r.last }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<div class="callout callout--warn" style="margin-top:14px">
+  <strong>A currency holiday means thin liquidity, not a closed market.</strong> FX trades
+  through national holidays; what changes is how many participants are at their desks.
+  National holidays are a <em>proxy</em> for market holidays, which is why the flag is
+  named <span class="mono">holiday_thin</span> rather than <span class="mono">market_closed</span>.
+</div>
+{% for currency, caveat in caveats.items() %}
+<p class="small muted" style="margin-top:10px"><strong>{{ currency }}.</strong> {{ caveat }}</p>
+{% endfor %}
+{{ m.card_close() }}
+
+<h2 class="section">Why ranges, not timestamps</h2>
+{{ m.card_open('TSTZRANGE with GiST exclusion constraints', 'recorded', '') }}
+<p class="small" style="margin-top:0">Windows are stored as ranges rather than
+  (start, end) column pairs for three reasons. Containment <em>is</em> the query —
+  <span class="mono">span @&gt; ts</span>, index-backed, instead of a pair of inequalities.
+  The exclusion constraint makes overlapping windows for the same session
+  <strong>impossible rather than merely unlikely</strong>, so a DST bug emitting two
+  overlapping London sessions fails at write time instead of double-counting at read time.
+  And it is the modelling technique the architecture doc names as directly transferable.</p>
+<p class="small muted" style="margin-bottom:0">The ClickHouse mirror flattens the same data
+  to hour buckets, because ClickHouse cannot join on inequality and has no correlated
+  subqueries — both failed on first attempt. That is lossless only because every boundary
+  here already falls on an hour, and it is worth stating that storing a range as an
+  enumeration is reasonable at 17,500 rows and absurd at tick scale.</p>
 {{ m.card_close() }}
 {% endblock %}

@@ -49,14 +49,14 @@ PHASES = [
         4,
         "Session & calendar",
         "1-2 weeks",
-        "next",
+        "done",
         "For any timestamp: which session, rollover?, holiday?",
     ),
     (
         5,
         "Validation harness",
         "2 weeks",
-        "planned",
+        "next",
         "Green scheduled suite plus a reconciliation report",
     ),
     (
@@ -272,10 +272,21 @@ def phase3(request: Request):
 
 @app.get("/phase/4", response_class=HTMLResponse)
 def phase4(request: Request):
+    """Phase 4 reads the real session calendar. The demo generators this route
+    used to call were deleted when the calendar landed.
+    """
     return templates.TemplateResponse(
         request,
         "phase4.html",
-        ctx(active=4, windows=demo.session_windows(), rollovers=demo.rollover_windows()),
+        ctx(
+            active=4,
+            coverage=live.session_coverage(),
+            holidays=live.session_holidays(),
+            dst=live.dst_windows(2024),
+            dst2025=live.dst_windows(2025),
+            moments=live.moment_examples(),
+            caveats=live.holiday_caveats(),
+        ),
     )
 
 

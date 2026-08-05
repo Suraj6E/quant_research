@@ -65,13 +65,25 @@ def test_rollover_detector_admits_its_dst_limitation():
     assert "daylight saving" in det.ROLLOVER_WINDOW.caveat.lower()
 
 
-def test_session_gap_does_not_claim_to_know_the_cause():
-    """It reports silence. Calling it `weekend_gap` would assert the cause,
-    which needs the Phase 4 calendar - and Dukascopy's empty-body response for
-    closed hours means the ingest ledger cannot settle it either.
+def test_session_gap_and_weekend_gap_answer_different_questions():
+    """`session_gap` reports silence; `weekend_gap` asserts the market was shut.
+
+    Phase 4 unblocked `weekend_gap`, and the temptation then is to delete
+    `session_gap` as redundant. It is not: a two-hour silence DURING trading
+    hours is a feed outage, and only `session_gap` catches it. Keeping both is
+    the point, so this test pins that they coexist and stay distinct rather
+    than pinning the Phase 2 state where one was blocked.
     """
     assert det.SESSION_GAP.name == "session_gap"
-    assert det.WEEKEND_GAP.blocked
+    assert det.WEEKEND_GAP.name == "weekend_gap"
+    assert not det.SESSION_GAP.blocked
+    assert not det.WEEKEND_GAP.blocked, "Phase 4 should have unblocked this"
+
+    # session_gap must not consult the calendar - that is what makes it able to
+    # report silence without claiming to know its cause.
+    assert "calendar" not in det.SESSION_GAP.sql.lower()
+    # weekend_gap must consult it, because asserting closure requires it.
+    assert "calendar_hour" in det.WEEKEND_GAP.sql
 
 
 # --------------------------------------------------------------------------

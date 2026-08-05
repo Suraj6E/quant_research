@@ -17,6 +17,9 @@ dependencies = [
   "pyarrow>=17",             # Parquet interchange between tiers
   "pandas>=2.2",
   "python-dotenv>=1.0",
+  "holidays>=0.57",          # per-currency holiday RULES, not a downloaded
+                             # dataset — free, no account, keeps the
+                             # no-registration constraint intact
 ]
 
 [project.optional-dependencies]

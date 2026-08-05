@@ -529,6 +529,69 @@ Underrated and disproportionately interview-relevant.
 
 ---
 
+**COMPLETE 2026-08-05.** Implemented in `src/fxpit/sessions/`. Exit criterion is
+executable: `python -m fxpit.sessions --describe 2024-01-08T22:30:00Z --pair EURUSD`.
+
+**Nothing in this phase contains a UTC constant.** Every window is defined in local
+wall-clock time with an IANA zone and converted, so daylight saving falls out of the
+conversion instead of being special-cased. That is the only way the awkward cases come out
+right without a table of exceptions: US and EU shifting on different dates, Sydney shifting
+the opposite way, Tokyo not shifting at all.
+
+Windows are stored as `TSTZRANGE` with GiST **exclusion constraints**, so overlapping
+windows for the same session are impossible rather than merely unlikely — a DST bug that
+emitted two overlapping London sessions fails at write time instead of double-counting at
+read time.
+
+### The DST anomaly, measured
+
+| Year | Window | Trading days | Overlap | Normal | Delta |
+|---|---|---|---|---|---|
+| 2024 | Mar 11 – Mar 29 | 15 | 5.0 h | 4.0 h | +1.0 |
+| 2024 | Oct 28 – Nov 1 | 5 | 5.0 h | 4.0 h | +1.0 |
+| 2025 | Mar 10 – Mar 28 | 15 | 5.0 h | 4.0 h | +1.0 |
+| 2025 | Oct 27 – Oct 31 | 5 | 5.0 h | 4.0 h | +1.0 |
+
+For roughly **20 trading days a year the most liquid window of the FX day is an hour longer
+than normal**. Hypothesis H6's artefact now exists as a measurement; whether it is
+economically meaningful remains open.
+
+### What this unblocked, and what it corrected
+
+`weekend_gap` and `holiday_thin` were blocked on this phase and are now live — eight of
+nine detectors run, with only `feed_disagreement` still waiting on HistData.
+
+**`rollover_window` was live but wrong.** It hardcoded 21:00 UTC, which is 17:00 New York
+only under EDT. Every winter tick — including the entire January sample — was flagged an
+hour early. Corrected results: 4,051 rollover flags at 22:00 UTC, and `holiday_thin` fires
+on 100% of USDJPY ticks for 2024-01-08, which is Coming of Age Day in Japan.
+
+`session_gap` survives alongside `weekend_gap` rather than being replaced: one reports
+silence, the other asserts the market was shut. A gap during trading hours is a feed outage
+and only the first catches it.
+
+### A silent timezone bug, caught here
+
+The first ClickHouse export stripped `tzinfo` before inserting, so the driver read each
+naive datetime as machine-local and converted it. On a machine at **UTC+5:45** every
+calendar hour landed at `:15` past, the detector's hour join matched nothing, and
+`rollover_window` returned **zero flags instead of raising**.
+
+This is precisely the risk §10 rates as high-likelihood — a silent timezone bug producing
+plausible-looking wrong data — appearing in the phase built to prevent it. It has a
+regression test rather than just a fix, and it is the strongest argument yet for the ECB
+drift anchor planned in Phase 5.
+
+### Known approximation
+
+Currency holidays come from the `holidays` package (rules, not a downloaded dataset, so the
+no-registration constraint holds). Two caveats are recorded in the data rather than only in
+a docstring: **national holidays are a proxy for market holidays**, and **the euro area has
+no single calendar** so Germany stands in for EUR. A holiday means thin liquidity, not a
+closed market — which is why the flag is `holiday_thin` and not `market_closed`.
+
+---
+
 ### Phase 5 — Validation harness (2 weeks)
 
 **Tasks**

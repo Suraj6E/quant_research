@@ -476,6 +476,85 @@ def as_of_walkthrough(series_id: str = "EMPLOY", ref_iso: str = "2009-12-01") ->
         return []
 
 
+# --------------------------------------------------------------------------
+# Phase 4 — real session and calendar state.
+# --------------------------------------------------------------------------
+
+
+def session_coverage() -> dict:
+    try:
+        from fxpit.sessions import store
+
+        conn = store.connect()
+        try:
+            return store.coverage(conn)
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+
+def session_holidays() -> list[dict]:
+    try:
+        from fxpit.sessions import store
+
+        conn = store.connect()
+        try:
+            return store.holidays_by_currency(conn)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def dst_windows(year: int = 2024) -> list[dict]:
+    """Computed from local-time rules, not tabulated."""
+    from fxpit.sessions import definitions as defs
+
+    return defs.dst_offset_weeks(year)
+
+
+def moment_examples() -> list[dict]:
+    """The exit criterion, answered live for a handful of instants."""
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    try:
+        from fxpit.sessions import store
+
+        conn = store.connect()
+        try:
+            asks = [
+                ("2024-01-08T13:00Z", "London/New York overlap", _dt(2024, 1, 8, 13, tzinfo=_UTC)),
+                ("2024-01-08T22:30Z", "inside rollover", _dt(2024, 1, 8, 22, 30, tzinfo=_UTC)),
+                ("2024-01-06T12:00Z", "Saturday", _dt(2024, 1, 6, 12, tzinfo=_UTC)),
+                ("2024-07-04T14:00Z", "US Independence Day", _dt(2024, 7, 4, 14, tzinfo=_UTC)),
+                ("2024-12-25T14:00Z", "Christmas, both legs", _dt(2024, 12, 25, 14, tzinfo=_UTC)),
+            ]
+            out = []
+            for label, note, ts in asks:
+                m = store.describe(conn, ts, "EURUSD")
+                out.append({
+                    "asked": label,
+                    "note": note,
+                    "market_open": m.market_open,
+                    "sessions": m.sessions,
+                    "rollover": m.is_rollover,
+                    "holidays": m.holidays,
+                })
+            return out
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def holiday_caveats() -> dict[str, str]:
+    from fxpit.sessions import holidays as hol
+
+    return dict(hol.CAVEATS)
+
+
 def revised_period_count() -> int:
     """How many (series, ref_period) pairs actually got revised in the fixture."""
     by_key: dict[tuple[str, date], list] = {}

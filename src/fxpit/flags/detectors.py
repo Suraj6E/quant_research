@@ -17,18 +17,29 @@ no-op. Different mechanisms, same guarantee.
 
 WHAT IS NOT HERE, AND WHY
 -------------------------
-Three of the eight planned flags cannot be implemented honestly yet:
+One of the nine planned flags still cannot be implemented honestly:
 
-  holiday_thin      needs the per-currency holiday calendar (Phase 4)
-  weekend_gap       needs session boundaries to assert a gap IS the weekend
-                    rather than merely a silence (Phase 4). `session_gap`
-                    below is the measurable subset: it reports silence without
-                    claiming to know its cause.
-  feed_disagreement needs HistData ingested as a second feed
+  feed_disagreement  needs HistData ingested as a second feed. A second
+                     opinion requires a second opinion.
 
-Shipping a `holiday_thin` that guessed at holidays would be worse than not
-shipping it — the flag table is a research deliverable, and a fabricated flag
-contaminates the very distribution it is supposed to describe.
+Shipping a guessed implementation would be worse than shipping none — the flag
+table is a research deliverable, so a fabricated flag contaminates the very
+distribution it is supposed to describe.
+
+WHAT PHASE 4 UNBLOCKED
+----------------------
+`weekend_gap` and `holiday_thin` were blocked on the session calendar and are
+now live. `rollover_window` was live but *wrong*: it hardcoded 21:00 UTC and
+was an hour out for the 20 trading days a year when US and EU daylight saving
+are out of step. All three now join the calendar mirrored into ClickHouse by
+`fxpit.sessions.export`, which means detector runs depend on that export being
+current — Postgres remains authoritative and a stale mirror is stale, not wrong
+in a way that announces itself.
+
+`session_gap` survives alongside `weekend_gap` rather than being replaced. They
+answer different questions: `session_gap` reports silence without claiming to
+know its cause, `weekend_gap` asserts the market was shut. A gap during trading
+hours is a feed outage and only the first will catch it.
 """
 
 from __future__ import annotations
@@ -158,22 +169,27 @@ SPREAD_OUTLIER = Detector(
 
 ROLLOVER_WINDOW = Detector(
     name="rollover_window",
-    description="21:00-22:00 UTC, when swap is applied and spreads widen structurally",
+    description="17:00-18:00 New York, when swap is applied and spreads widen",
     sql="""
-    SELECT instrument, ts, 'rollover_window' AS flag,
-           concat('hour_utc=', toString(toHour(ts))) AS detail
-      FROM tick_raw
-     WHERE instrument = {instrument:String}
-       AND ts >= {start:DateTime64(3, 'UTC')} AND ts < {end:DateTime64(3, 'UTC')}
-       AND toHour(ts) = 21
+    SELECT t.instrument, t.ts, 'rollover_window' AS flag,
+           concat('rollover_hour_utc=', toString(c.hour)) AS detail
+      FROM tick_raw AS t
+      INNER JOIN calendar_hour AS c ON toStartOfHour(t.ts) = c.hour
+     WHERE t.instrument = {instrument:String}
+       AND t.ts >= {start:DateTime64(3, 'UTC')} AND t.ts < {end:DateTime64(3, 'UTC')}
+       AND c.rollover = 1
     """,
     caveat=(
-        "Fixed at 21:00 UTC. The real window moves with daylight saving, and US "
-        "and EU shift on different dates — so for two to three weeks each spring "
-        "and autumn this is off by an hour. Corrected in Phase 4 when the session "
-        "calendar exists; the flags are deleted and re-run at that point."
+        "FIXED in Phase 4. This previously hardcoded 21:00 UTC and was an hour "
+        "wrong for the 20 trading days a year when US and EU daylight saving are "
+        "out of step. It now joins the session calendar, which derives the window "
+        "from 17:00 New York local time, so DST is handled by the conversion "
+        "rather than by a constant. Requires `python -m fxpit.sessions --export`, "
+        "which flattens the Postgres ranges to hour buckets because ClickHouse "
+        "cannot join on inequality."
     ),
 )
+
 
 SESSION_GAP = Detector(
     name="session_gap",
@@ -210,17 +226,46 @@ SESSION_GAP = Detector(
 
 WEEKEND_GAP = Detector(
     name="weekend_gap",
-    description="price discontinuity across the weekend close",
-    sql="",
-    caveat="Blocked on Phase 4: asserting a gap IS the weekend needs session boundaries.",
+    description="a tick outside the FX trading week entirely",
+    sql="""
+    SELECT t.instrument, t.ts, 'weekend_gap' AS flag,
+           concat('market_closed dow=', toString(toDayOfWeek(t.ts))) AS detail
+      FROM tick_raw AS t
+      INNER JOIN calendar_hour AS c ON toStartOfHour(t.ts) = c.hour
+     WHERE t.instrument = {instrument:String}
+       AND t.ts >= {start:DateTime64(3, 'UTC')} AND t.ts < {end:DateTime64(3, 'UTC')}
+       AND c.market_open = 0
+    """,
+    caveat=(
+        "UNBLOCKED in Phase 4. Now asserts what `session_gap` could not: this tick "
+        "falls outside every FX trading week, so the market was shut. Ticks landing "
+        "here are a genuine anomaly - the feed reporting activity when there should "
+        "be none - rather than merely a quiet stretch."
+    ),
 )
+
 
 HOLIDAY_THIN = Detector(
     name="holiday_thin",
-    description="legitimately sparse session on a currency holiday",
-    sql="",
-    caveat="Blocked on Phase 4: needs per-currency holiday calendars.",
+    description="either leg of the pair is on a national holiday",
+    sql="""
+    SELECT t.instrument, t.ts, 'holiday_thin' AS flag,
+           concat(h.currency, ': ', h.name) AS detail
+      FROM tick_raw AS t
+      INNER JOIN calendar_pair_leg AS l ON l.instrument = t.instrument
+      INNER JOIN calendar_holiday  AS h ON h.currency = l.currency
+                                       AND h.holiday_date = toDate(t.ts)
+     WHERE t.instrument = {instrument:String}
+       AND t.ts >= {start:DateTime64(3, 'UTC')} AND t.ts < {end:DateTime64(3, 'UTC')}
+    """,
+    caveat=(
+        "UNBLOCKED in Phase 4. Means THIN LIQUIDITY, not a closed market - FX trades "
+        "through national holidays and what changes is how many participants are at "
+        "their desks. National holidays are a proxy for market holidays, and EUR uses "
+        "the German calendar because the euro area has no single one."
+    ),
 )
+
 
 FEED_DISAGREEMENT = Detector(
     name="feed_disagreement",

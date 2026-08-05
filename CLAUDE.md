@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phases 0–3 are complete; Phase 4 is next.**
+**Phases 0–4 are complete; Phase 5 is next.**
 
-**The whole suite is green: 70 passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
+**The whole suite is green: 86 passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
 
 Phase 0's test bodies have never been edited. `conftest.py` supplies the backing store they always assumed. Keep it that way.
 
@@ -153,3 +153,19 @@ Recorded because each produces plausible-looking wrong data rather than an error
 ## Known limitations to preserve in writing
 
 `planning.md` §9 lists seven structural limitations (no consolidated tape, Dukascopy volume is not market volume, small cross-section raising overfitting risk, no free consensus forecasts, no forward points with a CIP-deviation-correlated proxy error, CFD-derived equity coverage, optimistic retail fills). These belong in the README and must not be quietly dropped or softened — stating them is success criterion #5.
+
+
+## Phase 4 sessions (src/fxpit/sessions/)
+
+```powershell
+python -m fxpit.sessions --build --start 2024-01-01 --end 2026-01-01
+python -m fxpit.sessions --export              # mirror into ClickHouse for detectors
+python -m fxpit.sessions --describe 2024-01-08T22:30:00Z --pair EURUSD
+python -m fxpit.sessions --dst 2024
+```
+
+- **Never write a UTC constant in this package.** Every window is local wall-clock time plus an IANA zone, converted. That is what makes US/EU offset weeks, southern-hemisphere Sydney, and no-DST Tokyo all come out right without special cases.
+- **`--export` must be re-run after any `--build`**, or the ClickHouse detectors join stale windows. Postgres is authoritative; the mirror is a mirror.
+- **The mirror is hour buckets, not ranges**, because ClickHouse cannot join on inequality and has no correlated subqueries. Lossless only because every boundary falls on an hour — do not reuse that trick at tick scale.
+- **Pass timezone-aware UTC datetimes to clickhouse-connect.** Stripping `tzinfo` makes the driver read them as machine-local; on a UTC+5:45 machine that silently shifted every calendar hour to `:15` past and made a detector return zero flags instead of erroring. There is a regression test.
+- **A currency holiday means thin liquidity, not a closed market.** Keep the flag named `holiday_thin`. National holidays are a proxy, and EUR uses the German calendar because the euro area has no single one — both caveats are surfaced in the UI, not just in docstrings.
