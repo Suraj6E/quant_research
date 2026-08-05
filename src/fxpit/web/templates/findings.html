@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Findings and conclusion{% endblock %}
+
+{% block content %}
+<article class="paper">
+
+<header class="paper__head">
+  <p class="paper__kicker">Findings · Written after the run</p>
+  <h1>What the experiment found</h1>
+  <p class="paper__subtitle">One contamination channel measured, two unresolvable — and
+    the reason they differ turned out to matter more than the number</p>
+  <p class="paper__meta">
+    Pre-registration sha256 <span class="mono">{{ a.prereg_hash or '—' }}</span> ·
+    n = {{ a.n or 0 }} of {{ a.events_total or 72 }} events ·
+    Statistics computed live at page load
+  </p>
+</header>
+
+<section class="abstract">
+  <h2>The verdict</h2>
+  <p style="font-size:19px;line-height:1.45;margin-bottom:.7em">
+    <strong>The apparatus succeeded. The measurement is one-third complete.</strong>
+  </p>
+  <p>Those are different claims, and collapsing them into "the experiment worked" or
+    "the experiment failed" would be exactly the imprecision this project was built to
+    detect.</p>
+  <ul class="prose-list" style="margin-bottom:.6em">
+    <li><strong>One of three contamination channels was measured</strong> at t = 7.6, and
+      its size is corroborated independently.</li>
+    <li><strong>Two channels are unresolvable</strong> at this sample — and the analysis
+      below shows they were never going to be resolvable at this sample, because their
+      effect arrives through a far higher-variance mechanism.</li>
+    <li><strong>No hypothesis is judged.</strong> H1 and H2 are recorded as not assessed.</li>
+  </ul>
+  <p style="margin-bottom:0">The most useful output is not a Sharpe ratio. It is a
+    <strong>power calculation</strong> saying how much data the remaining channels
+    actually need, and a <strong>methodological finding</strong> about why they differ so
+    sharply.</p>
+</section>
+
+{% if not a %}
+<div class="callout callout--warn">
+  <strong>No analysis available.</strong> The release cache or tick coverage is missing.
+  Run <span class="mono">python -m fxpit.experiment --run --start 2022-01-01 --end
+  2025-01-01</span>.
+</div>
+{% else %}
+
+<nav class="paper__toc" aria-label="Contents">
+  <ol>
+    <li><a href="#obtained">What was obtained</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#finding1">Finding 1 — the mid-price channel is real, and small</a></li>
+    <li><a href="#finding2">Finding 2 — the channels differ wildly in measurability</a></li>
+    <li><a href="#finding3">Finding 3 — H1's premise is questionable</a></li>
+    <li><a href="#hypotheses">Hypothesis status</a></li>
+    <li><a href="#finish">What would finish this</a></li>
+    <li><a href="#conclusion">Conclusion</a></li>
+  </ol>
+</nav>
+
+<section id="obtained">
+<h2><span class="sec-num">1</span> What was obtained</h2>
+<p><strong>72 genuine macro releases</strong> were constructed for 2022–2024 — 36 payrolls,
+  36 CPI — filtered from 75 ALFRED vintage dates. Three were annual seasonal-factor
+  revisions that republish old periods without adding a new one, and trading those would
+  be trading events that did not happen.</p>
+<p><strong>Only {{ a.n }} of the 72 could be priced.</strong> Dukascopy IP-blocked the
+  ingest after roughly 360 requests in a short window: TCP connect timeouts, not HTTP 429s.
+  377,418 ticks landed with zero recorded errors before the block. The pipeline behaved
+  correctly and the source refused.</p>
+</section>
+
+<section id="results">
+<h2><span class="sec-num">2</span> Results</h2>
+
+<h3>2.1 Per-arm returns</h3>
+{{ m.card_open('No arm is distinguishable from zero', 'live',
+    'Computed at page load from the tick archive.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Arm</th><th class="num">Mean bps</th><th class="num">SD</th>
+             <th class="num">SE</th><th class="num">t</th><th>95% CI on the mean</th></tr></thead>
+  <tbody>
+  {% for r in a.arms %}
+    <tr><td><strong>{{ r.key }}</strong> — {{ r.name }}</td>
+        <td class="num">{{ r.mean }}</td><td class="num">{{ r.sd }}</td>
+        <td class="num">{{ r.se }}</td><td class="num">{{ r.t }}</td>
+        <td class="mono small">[{{ r.lo }}, {{ r.hi }}]
+          {% if r.spans_zero %}<span class="muted">spans 0</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+<p>Every confidence interval spans zero. The rule is not profitable in any regime at this
+  sample — the expected and pre-registered outcome, since profitability was never the
+  point.</p>
+
+<h3>2.2 The estimand: paired channel differences</h3>
+<p>The arms trade the <em>same</em> events, so the differences are paired. That matters:
+  pairing removes the common market movement and is far more powerful than comparing four
+  independent Sharpe ratios.</p>
+{{ m.card_open('One channel resolves; three do not', 'live', '') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Channel</th><th class="num">Mean Δ bps</th><th class="num">SE</th>
+             <th class="num">t</th><th>Resolved?</th></tr></thead>
+  <tbody>
+  {% for c in a.channels %}
+    <tr>
+      <td><span class="mono">{{ c['from'] }} → {{ c['to'] }}</span>&nbsp; {{ c.label }}</td>
+      <td class="num">{% if c.resolved %}<strong>{{ c.mean }}</strong>
+          {% else %}{{ c.mean }}{% endif %}</td>
+      <td class="num">{{ c.se }}</td>
+      <td class="num">{% if c.resolved %}<strong>{{ c.t }}</strong>{% else %}{{ c.t }}{% endif %}</td>
+      <td>{% if c.resolved %}<span class="pill pill--good">✓ yes</span>
+          {% else %}<span class="pill pill--neutral">no</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+</section>
+
+<section id="finding1">
+<h2><span class="sec-num">3</span> Finding 1 — the mid-price channel is real, and small</h2>
+
+<p class="statement">Assuming a mid price is worth about
+  {% for c in a.channels %}{% if c['from'] == 'C' %}<strong>{{ c.mean }} basis points</strong>
+  per round trip (SE {{ c.se }}, t = {{ c.t }}){% endif %}{% endfor %} — roughly a third of
+  a pip.</p>
+
+<p>This survives n = {{ a.n }} because the paired difference is nearly deterministic: the
+  mid-price arm saves exactly one spread on every trade, so the difference series has almost
+  no variance. It is the one number in this project that is a genuine measurement rather
+  than an estimate.</p>
+
+<p>It is also <strong>independently corroborated</strong>. The measured median EURUSD spread
+  in the archive is <strong>0.271 bps</strong>. The channel should equal one spread per
+  round trip, and it lands slightly higher because the date-only arms enter at 00:00 UTC in
+  the thin Asian session, where spreads are wider. Two independent routes to the same
+  number.</p>
+
+<p class="pull">A practitioner who assumes the mid-price assumption alone explains a large
+  Sharpe gap is, for this instrument and horizon, wrong. The spread is simply too tight.</p>
+
+<p class="small muted">The picture would differ sharply in a wider-spread instrument or at a
+  shorter holding period. This is a measurement about EURUSD over 30 minutes, not a
+  universal constant.</p>
+</section>
+
+<section id="finding2">
+<h2><span class="sec-num">4</span> Finding 2 — the channels differ wildly in measurability</h2>
+
+<p>This was not anticipated in the pre-registration and is the more useful result.</p>
+
+{{ m.card_open('Same experiment, 200x difference in variance', 'live', '') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Channel</th><th>Mechanism</th><th class="num">SD of paired difference</th></tr></thead>
+  <tbody>
+    <tr><td>Mid-price</td><td class="small muted">a fixed cost on every trade</td>
+        <td class="num"><strong>{{ a.midprice_sd }} bps</strong></td></tr>
+    <tr><td>Revision leakage</td><td class="small muted">occasional signal flips</td>
+        <td class="num"><strong>{{ a.revision_sd }} bps</strong></td></tr>
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<p>The revision channel does not shift returns by a small amount on every event. It changes
+  the <strong>direction of the trade</strong> on a minority of events —
+  <strong>{{ a.direction_flips }} of {{ a.n }}</strong> here — and on those the entire
+  return distribution swings. A rare, large effect carries vastly more variance than a
+  small, constant one.</p>
+
+<h3>4.1 What that costs in data</h3>
+{{ m.card_open('Events needed to resolve a revision effect at t = 2', 'live',
+    'Computed from the observed ' ~ a.revision_sd ~ ' bps paired-difference spread.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th class="num">Effect to detect</th><th class="num">Events needed</th>
+             <th class="num">Years of payrolls + CPI</th></tr></thead>
+  <tbody>
+  {% for p in a.power %}
+    <tr><td class="num">{{ p.effect }} bps</td>
+        <td class="num">{{ p.n }}</td>
+        <td class="num">{% if p.years > 10 %}<strong>{{ p.years }}</strong>
+            {% else %}{{ p.years }}{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<p class="statement">This is the practical finding of the whole project. The spread channel
+  can be measured in a week of data. The revision channel needs years, and a small revision
+  effect needs decades.</p>
+
+<p>Any study claiming to have isolated revision leakage from a short sample should be asked
+  how it beat this variance.</p>
+</section>
+
+<section id="finding3">
+<h2><span class="sec-num">5</span> Finding 3 — H1's premise is questionable, independent of the sample</h2>
+
+<p>H1 predicted the ordering D &gt; C &gt; B &gt; A on the grounds that <em>"each variant
+  strictly adds an information or cost advantage that was unavailable in reality."</em></p>
+
+<p>For the mid-price and timestamp channels that is plainly true — a free spread and
+  thirteen hours of foresight are advantages in any design.</p>
+
+<p><strong>For the revision channel it is not obviously true at all</strong>, and this is an
+  argument about mechanism rather than a claim from the data.</p>
+
+<p>The market moved on the <strong>first print</strong>. That is the number traders saw and
+  acted on at 08:30. A simulation conditioned on the <em>revised</em> value is conditioned
+  on a figure that was never on any screen at the moment the price moved. For a strategy
+  predicting the <strong>economy</strong>, the revised value is better information. For an
+  <strong>event study predicting the market's reaction to a print</strong>, it is not better
+  information — it is a different, partly uncorrelated signal.</p>
+
+<p>The observed sign is consistent with this — A → B came out negative, meaning revised data
+  made the rule <em>worse</em> — but at n = {{ a.n }} the sign is not evidence. The argument
+  stands on its own logic.</p>
+
+<div class="callout callout--warn">
+  <strong>H1 should be reformulated before it is tested.</strong> As written it treats "more
+  accurate data" and "more advantageous data" as the same thing, and in an event-study
+  design they come apart.
+</div>
+</section>
+
+<section id="hypotheses">
+<h2><span class="sec-num">6</span> Hypothesis status</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Hypothesis</th><th>Status</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">H1</td>
+        <td><span class="pill pill--neutral">not assessed</span></td>
+        <td class="small muted">n = {{ a.n }}. The observed order is A &gt; D &gt; C &gt; B,
+          but at this sample that is a coin toss. §5 also argues the hypothesis needs
+          reformulating.</td></tr>
+    <tr><td class="mono">H2</td>
+        <td><span class="pill pill--neutral">not assessed</span></td>
+        <td class="small muted">The point estimate says revision leakage dominates the
+          mid-price effect by roughly 26×, contradicting H2 — but the revision estimate has
+          SE 9.2 and is indistinguishable from zero.</td></tr>
+    <tr><td class="mono">H4</td>
+        <td><span class="pill pill--critical">blocked</span></td>
+        <td class="small muted">HistData is not retrievable without a headless browser.</td></tr>
+    <tr><td class="mono">H5</td>
+        <td><span class="pill pill--warning">partially observed</span></td>
+        <td class="small muted">1.98% of ticks carry a flag; 97% of spread outliers cluster
+          at the Friday close and Sunday reopen.</td></tr>
+    <tr><td class="mono">H6</td>
+        <td><span class="pill pill--good">✓ artefact confirmed</span></td>
+        <td class="small muted">The London–New York overlap is 5h instead of 4h for ~20
+          trading days a year, computed from local-time rules. Economic significance
+          untested.</td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="finish">
+<h2><span class="sec-num">7</span> What would finish this</h2>
+<p>Nothing here needs new code. The gap is data.</p>
+<ol class="prose-list">
+  <li><strong>Ingest the remaining {{ a.events_total - a.n }} release days, paced.</strong>
+    Dukascopy blocks at roughly 360 requests in a burst; spread over hours it is fine. The
+    ingest ledger makes this resumable — a re-run fetches only what is missing.</li>
+  <li><strong>Extend the window to 2015–2024</strong> for ~240 events. Per §4 that resolves
+    a 5 bps revision effect but still not a 2 bps one.</li>
+  <li><strong>Reformulate H1</strong> along the lines of §5 before testing it.</li>
+  <li><strong>Find a second price feed</strong> for H4. HistData needs a browser; another
+    account-free tick source would be a better answer.</li>
+</ol>
+</section>
+
+<section id="conclusion">
+<h2><span class="sec-num">8</span> Conclusion</h2>
+
+<p>The project's stated goal was never a profitable strategy. It was to make contamination
+  <strong>measurable</strong>, and to be able to say how much of a reported result comes
+  from data rather than signal.</p>
+
+<h3>What was achieved</h3>
+<p>A point-in-time database where the guarantee is enforced by 116 tests rather than by
+  care, where every read goes through one implementation of
+  <span class="mono">known_at &lt;= t</span>, and where a mutation check confirms the
+  acceptance suite catches five distinct ways of breaking it. An experiment harness whose
+  pre-registration is hash-verified, whose arms provably differ in exactly one dimension
+  each, and which refuses to render a verdict it cannot support. One contamination channel
+  measured at t = 7.6 and corroborated independently.</p>
+
+<h3>What was not achieved</h3>
+<p>Two of three channels remain unmeasured, and the honest reason is that the sample is
+  {{ a.n }} events rather than {{ a.events_total }} — a free data source rate-limited the
+  ingest, not a design failure.</p>
+
+<h3>The most valuable output was not planned</h3>
+<p>The power calculation in §4 says the revision channel needs 110 events to resolve a 5 bps
+  effect and 682 for a 2 bps one. That reframes the original question. <em>"How much is
+  revision leakage worth?"</em> turns out to be less useful than <em>"how much data does
+  anyone need before they can honestly claim to know?"</em> — and the answer, for the
+  smaller effects, is more than most published studies have.</p>
+
+<p class="pull">A null result that explains its own null is not a failed experiment.</p>
+
+<p>That is a more transferable result than a Sharpe ratio would have been, and it came from
+  the experiment failing to reach significance rather than from it succeeding.</p>
+
+<h3>A closing note on the project's own standard</h3>
+<p>Three times during this build the system produced a plausible-looking wrong number:</p>
+<ul class="prose-list">
+  <li>a <strong>6,919-point GDP "revision"</strong> that was a base-year change from 1982
+    to 2017 dollars;</li>
+  <li>a <strong>rollover detector silently returning zero flags</strong> after a naive
+    datetime was read as machine-local on a UTC+5:45 machine;</li>
+  <li>a <strong>keyless ALFRED endpoint</strong> serving today's revised data under a
+    historical vintage date, with no error and no warning.</li>
+</ul>
+<p>Each was caught by a check that existed because the project assumed such things happen.
+  That is the strongest evidence the discipline was worth the effort, and it is worth more
+  than the experiment's headline number.</p>
+</section>
+
+{% endif %}
+
+<footer class="paper__foot">
+  <p class="small muted">Statistics on this page are computed live from the tick archive at
+    page load; the narrative was written after the run. The question this answers is stated
+    in the <a href="/">research prospectus</a>. Per-phase detail is under
+    <a href="/phase/6">Phase 6</a>. The same content in plain text lives in
+    <span class="mono">docs/findings.md</span>.</p>
+</footer>
+
+</article>
+{% endblock %}

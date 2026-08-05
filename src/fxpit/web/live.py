@@ -716,6 +716,116 @@ def experiment_result(start_iso: str = "2022-01-01", end_iso: str = "2025-01-01"
         return {}
 
 
+@lru_cache(maxsize=2)
+def experiment_analysis() -> dict:
+    """Paired-difference statistics and the power calculation.
+
+    The four arms trade the SAME events, so the channel differences are paired.
+    That matters: pairing removes the common market movement and is far more
+    powerful than comparing four independent Sharpe ratios. It is also what
+    reveals that one channel is measurable at n=8 and the others are not.
+    """
+    import json
+    import math
+    import statistics as stats
+    from datetime import date as _date
+    from datetime import datetime as _dt
+
+    try:
+        from fxpit.config import ROOT as _ROOT
+        from fxpit.experiment import releases as rel
+        from fxpit.experiment.run import run_experiment
+
+        cache = _ROOT / "data" / "experiment_releases.json"
+        if not cache.exists():
+            return {}
+        raw = json.loads(cache.read_text(encoding="utf-8"))
+        events = [
+            rel.Release(
+                series_id=r["series_id"],
+                release_date=_date.fromisoformat(r["release_date"]),
+                release_ts=_dt.fromisoformat(r["release_ts"]),
+                ref_period=_date.fromisoformat(r["ref_period"]),
+                first_print=r["first_print"], final_value=r["final_value"],
+                surprise_first=r["surprise_first"], surprise_final=r["surprise_final"],
+            )
+            for r in raw
+        ]
+        exp = run_experiment(events)
+        by_arm = {
+            k: {t.release.release_date: t.return_bps for t in v.trades}
+            for k, v in exp.results.items()
+        }
+        common = sorted(set.intersection(*(set(d) for d in by_arm.values())))
+        if len(common) < 2:
+            return {}
+
+        arms = []
+        for k, name in (("A", "Honest"), ("B", "Revised"), ("C", "Date-only"),
+                        ("D", "Mid-price")):
+            xs = [by_arm[k][d] for d in common]
+            m, sd = stats.mean(xs), stats.stdev(xs)
+            se = sd / math.sqrt(len(xs))
+            arms.append({
+                "key": k, "name": name, "mean": round(m, 2), "sd": round(sd, 2),
+                "se": round(se, 2), "t": round(m / se, 2) if se else 0.0,
+                "lo": round(m - 1.96 * se, 2), "hi": round(m + 1.96 * se, 2),
+                "spans_zero": (m - 1.96 * se) <= 0 <= (m + 1.96 * se),
+            })
+
+        channels = []
+        for a, b, label, mech in (
+            ("A", "B", "Revision leakage", "occasional signal flips"),
+            ("B", "C", "Timestamp coarsening", "13 hours of foresight"),
+            ("C", "D", "Mid-price assumption", "a fixed cost on every trade"),
+            ("A", "D", "All three combined", "-"),
+        ):
+            ds = [by_arm[b][d] - by_arm[a][d] for d in common]
+            m = stats.mean(ds)
+            sd = stats.stdev(ds) if len({round(x, 9) for x in ds}) > 1 else 0.0
+            se = sd / math.sqrt(len(ds)) if sd else 0.0
+            t = (m / se) if se else 0.0
+            channels.append({
+                "from": a, "to": b, "label": label, "mechanism": mech,
+                "mean": round(m, 3), "sd": round(sd, 2), "se": round(se, 3),
+                "t": round(t, 2), "resolved": abs(t) > 2.0,
+            })
+
+        # Power: how many events to resolve an effect of a given size at t=2,
+        # using the observed spread of the revision channel's paired difference.
+        rev_sd = next(c["sd"] for c in channels if c["from"] == "A" and c["to"] == "B")
+        power = [
+            {
+                "effect": e,
+                "n": math.ceil((2.0 * rev_sd / e) ** 2),
+                "years": round(math.ceil((2.0 * rev_sd / e) ** 2) / 24, 1),
+            }
+            for e in (10.0, 5.0, 2.0)
+        ]
+
+        flips = 0
+        for d in common:
+            ta = next(t for t in exp.results["A"].trades if t.release.release_date == d)
+            tb = next(t for t in exp.results["B"].trades if t.release.release_date == d)
+            flips += ta.direction != tb.direction
+
+        return {
+            "n": len(common),
+            "events_total": exp.events_considered,
+            "arms": arms,
+            "channels": channels,
+            "power": power,
+            "revision_sd": round(rev_sd, 2),
+            "midprice_sd": round(
+                next(c["sd"] for c in channels if c["from"] == "C"), 2
+            ),
+            "direction_flips": flips,
+            "prereg_hash": exp.prereg_hash,
+        }
+    except Exception:
+        return {}
+
+
 def revised_period_count() -> int:
     """How many (series, ref_period) pairs actually got revised in the fixture."""
     by_key: dict[tuple[str, date], list] = {}

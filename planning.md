@@ -704,7 +704,8 @@ Evaluate under four data regimes:
 ---
 
 **HARNESS COMPLETE 2026-08-05; the run is UNDERPOWERED and says so.**
-Implemented in `src/fxpit/experiment/`.
+Implemented in `src/fxpit/experiment/`. **Full findings and conclusion:
+[`docs/findings.md`](docs/findings.md).**
 
 ### Pre-registration
 

@@ -5,7 +5,12 @@ can be answered **as of a historical timestamp**, returning only information
 that was actually available at that moment.
 
 **Status:** all seven phases built. The acceptance suite is green and the
-contamination experiment runs. Two things are honestly incomplete — see
+contamination experiment runs.
+
+**Read [`docs/findings.md`](docs/findings.md) for the result and what it means.**
+Short version: the apparatus succeeded, one of three contamination channels was
+measured (t = 7.6), and the other two need years of data rather than days — which
+turned out to be the more useful finding. See also
 [What is not finished](#what-is-not-finished).
 
 **Constraint:** every data source is free and requires no account, no login,

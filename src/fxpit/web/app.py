@@ -92,6 +92,18 @@ def research(request: Request):
     )
 
 
+@app.get("/findings", response_class=HTMLResponse)
+def findings(request: Request):
+    """The answer to the question the prospectus asks.
+
+    Statistics are computed live from the tick archive; the narrative was
+    written after the run.
+    """
+    return templates.TemplateResponse(
+        request, "findings.html", ctx(active="findings", a=live.experiment_analysis())
+    )
+
+
 @app.get("/status", response_class=HTMLResponse)
 def overview(request: Request):
     results = live.run_tests()
