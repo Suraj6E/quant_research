@@ -167,14 +167,35 @@ def phase0(request: Request):
 
 @app.get("/phase/1", response_class=HTMLResponse)
 def phase1(request: Request):
-    insts, months, matrix = demo.ingest_coverage()
-    cov = heatmap(
-        insts, months, matrix, unit="%", caption="Ingest coverage by instrument and month"
-    )
+    """Phase 1 reads real ingest state.
+
+    The demo generators this route used to call were deleted when the pipeline
+    landed, per docs/ui-design.md §9 — a demo generator left in place after its
+    panel goes live is what the next person reaches for by mistake.
+    """
+    summary = live.ingest_summary()
+    store_stats = live.tick_store_stats()
+
+    ticks_chart = None
+    if store_stats:
+        ticks_chart = bar_chart(
+            [r["instrument"] for r in store_stats],
+            [float(r["ticks"]) for r in store_stats],
+            places=0,
+            caption="Ticks ingested into tick_raw, by instrument",
+        )
+
     return templates.TemplateResponse(
         request,
         "phase1.html",
-        ctx(active=1, coverage=cov, ledger=demo.ingest_ledger()),
+        ctx(
+            active=1,
+            summary=summary,
+            monthly=live.ingest_monthly_coverage(),
+            store_stats=store_stats,
+            recon=live.ingest_reconciliation(),
+            ticks_chart=ticks_chart,
+        ),
     )
 
 

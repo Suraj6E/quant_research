@@ -7,75 +7,188 @@
   <h1>Phase 1 — Tick ingest</h1>
   <p>Fetch and decode Dukascopy <span class="mono">.bi5</span> hourly files into
      <span class="mono">tick_raw</span>. Resumable, idempotent, rate-limited, and never
-     transformed on ingest. Start narrow — 7 majors from 2015 — and extend backward only
-     once the pipeline is boring.</p>
+     transformed on ingest. Started narrow — a handful of majors over a few days — and
+     extended only once a re-run was provably a no-op.</p>
 </div>
 
 <div class="callout">
   <strong>Exit criterion:</strong> re-running the ingest produces zero new rows and zero
-  errors. <span class="pill pill--warning">next up</span>
+  errors. <span class="pill pill--good">✓ met</span>
+  <span class="small muted">Verified by
+  <span class="mono">python -m fxpit.ingest --verify-idempotent</span>, which ingests a
+  range, ingests it again, and fails unless the second pass changes nothing.</span>
 </div>
 
+{% if not summary %}
 <div class="callout callout--warn" style="margin-top:14px">
-  <strong>The decoder is already proven.</strong> The Phase 0 source check decoded 4,508
-  real EURUSD ticks, confirmed the zero-based month indices empirically, and confirmed
-  the per-instrument decimal factor (1e5 for EUR pairs, 1e3 for JPY). The riskiest part
-  of this phase was de-risked before it started.
+  <strong>No ledger data.</strong> Either nothing has been ingested yet, or Postgres is
+  unreachable. Start the stack with <span class="mono">docker compose up -d</span>, then
+  <span class="mono">python -m fxpit.ingest --instruments EURUSD --start 2024-01-08
+  --end 2024-01-09</span>.
+</div>
+{% endif %}
+
+<h2 class="section">What is in the store</h2>
+<div class="grid grid--4">
+  {{ m.stat('Ticks in tick_raw',
+            '{:,}'.format(recon.store_ticks),
+            'across ' ~ store_stats|length ~ ' instrument(s)') }}
+  {{ m.stat('Hours with data',
+            summary|sum(attribute='ok'),
+            'ledger status = ok') }}
+  {{ m.stat('Empty hours',
+            summary|sum(attribute='empty'),
+            'closed sessions — not errors') }}
+  {{ m.stat('Errors',
+            summary|sum(attribute='error'),
+            'unsettled after retries',
+            'good' if summary|sum(attribute='error') == 0 else 'critical') }}
 </div>
 
-<h2 class="section">Coverage</h2>
-{{ m.card_open('Ingest coverage by instrument and month', 'demo',
-    'Percent of expected hours present. Two holes are baked in — a coverage view whose
-     every cell is green cannot show you what a gap looks like.',
-    'Phase 1') }}
-{{ m.figure(coverage, scroll=true) }}
+{{ m.card_open('Ledger and store agree', 'live',
+    'The ledger records what was fetched; tick_raw holds what was written. A mismatch
+     would mean rows were written without being recorded, or recorded without being
+     written — either way the coverage report would be lying, which is the one thing the
+     ledger exists to prevent.') }}
+<div class="row">
+  <span class="mono">ledger {{ '{:,}'.format(recon.ledger_ticks) }}</span>
+  <span class="muted">vs</span>
+  <span class="mono">tick_raw {{ '{:,}'.format(recon.store_ticks) }}</span>
+  {% if recon.agree %}<span class="pill pill--good">✓ reconciled</span>
+  {% else %}<span class="pill pill--critical">✕ mismatch</span>{% endif %}
+</div>
 {{ m.card_close() }}
 
-<h2 class="section">Ingest ledger</h2>
-{{ m.card_open('What was fetched, and whether it worked', 'demo',
-    'The ledger is what makes coverage gaps visible rather than silent. Without it a
-     partial run looks identical to a complete one.',
-    'Phase 1') }}
+{% if ticks_chart %}
+{{ m.card_open('Ticks by instrument', 'live',
+    'Read from tick_raw at page load.') }}
+{{ m.figure(ticks_chart) }}
+{{ m.card_close() }}
+{% endif %}
+
+<h2 class="section">Store contents</h2>
+{{ m.card_open('tick_raw, as ingested', 'live',
+    'Crossed quotes are counted, not removed. tick_raw is immutable and cleaning is
+     additive — a crossed quote here is evidence about the feed, and Phase 2 flags it
+     rather than correcting it.') }}
 <div class="table-wrap"><table>
-  <thead><tr><th>Instrument</th><th class="num">Hours fetched</th>
-             <th class="num">Empty payloads</th><th class="num">Errors</th>
-             <th>Status</th></tr></thead>
+  <thead><tr><th>Instrument</th><th class="num">Ticks</th><th>First</th><th>Last</th>
+             <th class="num">Crossed</th><th class="num">Mean spread</th></tr></thead>
   <tbody>
-  {% for r in ledger %}
+  {% for r in store_stats %}
     <tr><td class="mono">{{ r.instrument }}</td>
-        <td class="num">{{ r.hours_fetched }}</td>
-        <td class="num">{{ r.empty_payloads }}</td>
-        <td class="num">{{ r.errors }}</td>
-        <td>{% if r.status == 'clean' %}<span class="pill pill--good">✓ clean</span>
-            {% else %}<span class="pill pill--warning">! {{ r.status }}</span>{% endif %}</td></tr>
+        <td class="num">{{ '{:,}'.format(r.ticks) }}</td>
+        <td class="mono small">{{ r.first_ts }}</td>
+        <td class="mono small">{{ r.last_ts }}</td>
+        <td class="num">{{ r.crossed }}</td>
+        <td class="num">{{ r.mean_spread }}</td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted small">tick_raw is empty.</td></tr>
   {% endfor %}
   </tbody>
 </table></div>
 {{ m.card_close() }}
 
+<h2 class="section">Ingest ledger</h2>
+{{ m.card_open('What was fetched, and whether it worked', 'live',
+    'The ledger is what makes coverage gaps visible rather than silent. Without it a
+     partial run looks identical to a complete one — and it is also the idempotency
+     mechanism: a settled hour is never fetched again.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Instrument</th><th class="num">ok</th><th class="num">empty</th>
+             <th class="num">missing</th><th class="num">error</th>
+             <th class="num">Ticks</th><th>Range</th></tr></thead>
+  <tbody>
+  {% for r in summary %}
+    <tr><td class="mono">{{ r.instrument }}</td>
+        <td class="num">{{ r.ok }}</td>
+        <td class="num">{{ r.empty }}</td>
+        <td class="num">{{ r.missing }}</td>
+        <td class="num">{% if r.error %}<span class="pill pill--critical">{{ r.error }}</span>
+                        {% else %}0{% endif %}</td>
+        <td class="num">{{ '{:,}'.format(r.ticks) }}</td>
+        <td class="mono small">{{ r.first_hour.strftime('%Y-%m-%d %H') }}Z –
+            {{ r.last_hour.strftime('%Y-%m-%d %H') }}Z</td></tr>
+  {% else %}
+    <tr><td colspan="7" class="muted small">Ledger is empty.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+{% if monthly %}
+<h2 class="section">Coverage by month</h2>
+{{ m.card_open('Hours attempted versus hours carrying data', 'live',
+    'An empty hour is not a gap — the FX market is closed most of the weekend. Separating
+     "closed" from "feed gap" needs the Phase 4 session calendar, so this table reports
+     both rather than netting them into a single completeness figure.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Instrument</th><th>Month</th><th class="num">Attempted</th>
+             <th class="num">With data</th><th class="num">Empty</th>
+             <th class="num">Failed</th><th class="num">Ticks</th></tr></thead>
+  <tbody>
+  {% for r in monthly %}
+    <tr><td class="mono">{{ r.instrument }}</td>
+        <td class="mono small">{{ r.month }}</td>
+        <td class="num">{{ r.attempted }}</td>
+        <td class="num">{{ r.with_data }}</td>
+        <td class="num">{{ r.empty }}</td>
+        <td class="num">{{ r.failed }}</td>
+        <td class="num">{{ '{:,}'.format(r.ticks) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+{% endif %}
+
 <h2 class="section">Ingest gotchas</h2>
 {{ m.card_open('Each produces plausible-looking wrong data, not an error', 'recorded',
-    'Recorded because a loud failure is cheap and a quiet one is not.') }}
+    'Recorded because a loud failure is cheap and a quiet one is not. All four were
+     confirmed by measurement rather than read from documentation.') }}
 <div class="table-wrap"><table>
   <tbody>
     <tr><td style="width:34%"><strong>Zero-based month indices</strong></td>
-        <td class="small muted">Confirmed by measurement: month <span class="mono">00</span>
-          returns January (mean bid 1.09409), month <span class="mono">01</span> February
+        <td class="small muted">Month <span class="mono">00</span> returns January (mean
+          EURUSD bid 1.09409 on day 09), month <span class="mono">01</span> February
           (1.07665). An off-by-one silently returns a different month's prices.</td></tr>
     <tr><td><strong>Per-instrument decimal factor</strong></td>
-        <td class="small muted">JPY pairs use 1e3, EUR pairs 1e5. Wrong factor gives
-          prices off by two orders of magnitude — obvious — or subtly wrong, which is
-          worse.</td></tr>
+        <td class="small muted">JPY pairs use 1e3, others 1e5. The same integers decode to
+          143.946 or 0.143946 depending on which is applied. Unknown instruments raise
+          rather than defaulting.</td></tr>
+    <tr><td><strong>Ask precedes bid on the wire</strong></td>
+        <td class="small muted">The 20-byte record is
+          <span class="mono">(ms, ask, bid, ask_vol, bid_vol)</span>. Swapping them yields
+          a uniformly negative spread, which reads as a broken feed rather than a decode
+          bug — so the failure gets blamed on the wrong thing.</td></tr>
     <tr><td><strong>Weekends return HTTP 200 with 0 bytes</strong></td>
         <td class="small muted"><strong>Corrected by measurement.</strong> planning.md
-          originally said weekends were <em>absent</em>. They are not — Dukascopy serves an
-          empty file, so HTTP status cannot distinguish closed-market from feed-gap. The
-          ledger must consult the session calendar, which makes <strong>Phase 4 a partial
-          dependency of this phase's coverage report</strong>.</td></tr>
-    <tr><td><strong>Legitimately empty hours</strong></td>
-        <td class="small muted">Thin holiday sessions return valid empty payloads. Not an
-          error, and must not be retried forever.</td></tr>
+          originally said weekends were <em>absent</em>. They are not — an empty file is
+          served, so HTTP status cannot separate closed-market from feed-gap. This makes
+          <strong>Phase 4 a partial dependency of this phase's coverage report</strong>.</td></tr>
+    <tr><td><strong>Concurrency draws throttling</strong></td>
+        <td class="small muted"><strong>Found during the first live run.</strong> Four
+          workers at a 0.15s pause earned a burst of HTTP 503s and 10 failed hours.
+          Defaults are now 2 workers at 0.25s, with jittered backoff on 429/503 so
+          retrying workers do not resynchronise and recreate the burst.</td></tr>
   </tbody>
 </table></div>
+{{ m.card_close() }}
+
+<h2 class="section">How idempotency works</h2>
+{{ m.card_open('claim → insert → settle', 'recorded',
+    'The ordering is the whole mechanism, and reversing it would be much worse than
+     leaving it out.') }}
+<p class="small" style="margin-top:0">An hour is written in three steps: a ledger row is
+  claimed as <span class="mono">in_progress</span>, ticks are inserted as a single block,
+  then the row is settled as <span class="mono">ok</span>. A crash between steps 2 and 3
+  leaves a claim whose rows may or may not exist — so on startup every
+  <span class="mono">in_progress</span> row is treated as suspect, its ticks are deleted,
+  and the hour is re-fetched cleanly.</p>
+<p class="small">Settling <em>before</em> inserting would be the tempting simplification
+  and the dangerous one: a crash would mark an hour permanently complete with no data in
+  it, and the ledger would confidently report coverage that does not exist.</p>
+<p class="small muted" style="margin-bottom:0">Idempotency comes from never re-fetching a
+  settled hour, not from de-duplicating afterwards. Dedup would need either a mutable tick
+  table — forbidden — or a scan across billions of rows.</p>
 {{ m.card_close() }}
 {% endblock %}

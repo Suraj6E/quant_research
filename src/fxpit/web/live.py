@@ -244,6 +244,75 @@ def bars_fixture() -> list[dict]:
     ]
 
 
+# --------------------------------------------------------------------------
+# Phase 1 — real ingest state, read from the ledger and tick_raw.
+#
+# These replaced demo generators when Phase 1 landed. Each degrades to an empty
+# result rather than raising, so the dashboard still renders with the stack
+# stopped; the caller decides whether "no data" means "not ingested" or
+# "database unreachable".
+# --------------------------------------------------------------------------
+
+
+def ingest_summary() -> list[dict]:
+    """Per-instrument ledger totals. Empty list if the stack is unreachable."""
+    try:
+        from fxpit.ingest import ledger
+
+        conn = ledger.connect()
+        try:
+            ledger.ensure_schema(conn)
+            return ledger.summary(conn)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def ingest_monthly_coverage() -> list[dict]:
+    try:
+        from fxpit.ingest import ledger
+
+        conn = ledger.connect()
+        try:
+            ledger.ensure_schema(conn)
+            return ledger.monthly_coverage(conn)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def tick_store_stats() -> list[dict]:
+    """What is actually in tick_raw, read from ClickHouse."""
+    try:
+        from fxpit.ingest import store
+
+        client = store.connect()
+        try:
+            return store.rows_by_instrument(client)
+        finally:
+            client.close()
+    except Exception:
+        return []
+
+
+def ingest_reconciliation() -> dict:
+    """Do the ledger and tick_raw agree?
+
+    A mismatch means rows were written without being recorded, or recorded
+    without being written — either way the coverage report is lying, which is
+    the one thing the ledger exists to prevent.
+    """
+    ledger_rows = sum(r["ticks"] for r in ingest_summary())
+    store_rows = sum(r["ticks"] for r in tick_store_stats())
+    return {
+        "ledger_ticks": ledger_rows,
+        "store_ticks": store_rows,
+        "agree": ledger_rows == store_rows,
+    }
+
+
 def revised_period_count() -> int:
     """How many (series, ref_period) pairs actually got revised in the fixture."""
     by_key: dict[tuple[str, date], list] = {}

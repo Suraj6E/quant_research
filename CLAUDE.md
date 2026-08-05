@@ -4,9 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phase 0 is complete; Phase 1 has not started.** The acceptance suite is **red on purpose** — 17 failing (all `NotImplementedError` from the unimplemented `as_of()`), 11 passing (fixture-validation). A failure that is *not* a `NotImplementedError` means something real broke. See `tests/SPEC.md`.
+**Phases 0 and 1 are complete; Phase 2 is next.**
 
-`src/fxpit/query/as_of.py` defines the read contract with unimplemented bodies; it is implemented in Phase 3. No ingestion code exists yet.
+The suite splits into two halves that must not be confused:
+
+- **Acceptance suite (Phase 0) — red on purpose.** 17 failing, every one a `NotImplementedError` from the unimplemented `as_of()`. A failure that is *not* a `NotImplementedError` means something real broke. See `tests/SPEC.md`.
+- **Ingest suite (Phase 1) — green.** `tests/test_ingest.py`, unit tests with no network plus integration tests behind `-m integration`. These must stay green.
+
+`src/fxpit/query/as_of.py` defines the read contract with unimplemented bodies; it is implemented in Phase 3.
+
+## Phase 1 ingest (src/fxpit/ingest/)
+
+```powershell
+python -m fxpit.ingest --instruments EURUSD --start 2024-01-08 --end 2024-01-09
+python -m fxpit.ingest --majors --start 2024-01-08 --end 2024-01-09
+python -m fxpit.ingest --report                # coverage + ledger/store reconciliation
+python -m fxpit.ingest --verify-idempotent ... # asserts the exit criterion
+```
+
+- **Idempotency comes from the ledger, not from dedup.** A settled hour is never re-fetched. Dedup after the fact would need a mutable tick table (forbidden) or a scan of billions of rows.
+- **Never reorder `claim → insert → settle`.** A crash between insert and settle leaves an `in_progress` claim, which startup treats as suspect: it deletes that hour's ticks and re-fetches. Settling first would mark an hour permanently complete with no data in it.
+- **`store.delete_hour()` is the only write path that removes ticks** and exists solely to undo a crashed claim. Never use it to clean or correct data that landed successfully.
+- **Decoding is not transformation.** Integer→float via the decimal factor and ms-offset→UTC timestamp are required to have a price at all. Everything else the feed sent — crossed quotes, zero spreads, duplicate stamps, out-of-order rows — is preserved untouched and flagged additively in Phase 2.
+- **Ask precedes bid in the 20-byte wire record** (`>IIIff` = ms, ask, bid, ask_vol, bid_vol). Swapping them yields a uniformly negative spread that reads as a broken feed rather than a decode bug.
+- **Concurrency above 2 workers draws HTTP 503** (measured: 4 workers at 0.15s pause produced 10 throttled hours). Defaults are 2 workers / 0.25s with jittered backoff on 429/503 so retrying workers don't resynchronise.
 
 `planning.md` is the specification. Read it before writing code in this repo; it is the source of truth for schema, phasing, and rationale. `docs/architecture.md` covers how the tiers are wired, `docs/setup.md` covers environment setup, `docs/ui-design.md` covers the dashboard. This file records only the rules that are easy to violate accidentally.
 

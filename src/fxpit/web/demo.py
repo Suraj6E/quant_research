@@ -34,43 +34,11 @@ def _rng(salt: str) -> random.Random:
     return random.Random(f"{SEED}:{salt}")
 
 
-def ingest_coverage() -> tuple[list[str], list[str], list[list[float]]]:
-    """Percent-complete by instrument and month — the Phase 1 coverage report.
-
-    Two gaps are baked in, because a coverage view whose every cell is green
-    cannot show you what a gap looks like.
-    """
-    rng = _rng("coverage")
-    months = [f"2024-{m:02d}" for m in range(1, 13)]
-    matrix = []
-    for inst in MAJORS:
-        row = []
-        for j, _ in enumerate(months):
-            if inst == "NZDUSD" and j in (6, 7):
-                row.append(rng.uniform(11, 34))      # a real-looking hole
-            elif inst == "USDCAD" and j == 10:
-                row.append(rng.uniform(58, 72))      # a partial month
-            else:
-                row.append(rng.uniform(97.4, 100.0))
-        matrix.append(row)
-    return MAJORS, months, matrix
-
-
-def ingest_ledger() -> list[dict[str, str]]:
-    rng = _rng("ledger")
-    rows = []
-    for inst in MAJORS[:5]:
-        fetched = rng.randint(8_400, 8_760)
-        empty = rng.randint(1_900, 2_100)
-        errors = rng.choice([0, 0, 0, 1, 3])
-        rows.append({
-            "instrument": inst,
-            "hours_fetched": f"{fetched:,}",
-            "empty_payloads": f"{empty:,}",
-            "errors": str(errors),
-            "status": "clean" if errors == 0 else "retry queued",
-        })
-    return rows
+# Phase 1's generators (ingest_coverage, ingest_ledger) were DELETED when the
+# real pipeline landed on 2026-08-04. The panels now read from the ingest
+# ledger and tick_raw via fxpit.web.live. Deleting rather than commenting out
+# is deliberate: a retired generator left in the file is precisely what the
+# next person reaches for when adding a panel.
 
 
 def flag_density() -> tuple[list[str], list[str], list[list[float]]]:

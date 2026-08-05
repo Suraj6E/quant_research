@@ -355,6 +355,34 @@ Write the tests before the pipeline. This is the discipline that separates a res
 
 ---
 
+**COMPLETE 2026-08-05.** Implemented in `src/fxpit/ingest/`; exit criterion verified by
+`python -m fxpit.ingest --verify-idempotent`, which ingests a range, ingests it again, and
+fails unless the second pass fetches nothing and inserts nothing.
+
+Idempotency is achieved by **never re-fetching a settled hour**, not by de-duplicating
+after the fact — dedup would require either a mutable tick table (forbidden) or a scan
+across billions of rows. The ledger lives in Postgres because it is small and
+UPDATE-heavy, which ClickHouse handles badly.
+
+Crash safety rests on the ordering `claim → insert → settle`. A crash between insert and
+settle leaves an `in_progress` claim; startup treats every such row as suspect, deletes
+that hour's ticks, and re-fetches. The reverse ordering would be far worse — a crash would
+mark an hour permanently complete with no data in it, and the ledger would report coverage
+that does not exist.
+
+**Two findings from the first live run**, neither of which was in the gotcha list above:
+
+1. **Ask precedes bid in the 20-byte wire record** (`>IIIff` = ms, ask, bid, ask_vol,
+   bid_vol). Reversing them produces a uniformly *negative* spread, which reads as a broken
+   feed rather than a decode bug — so the failure gets attributed to the wrong component.
+2. **Concurrency draws throttling.** Four workers at a 0.15 s pause earned a burst of
+   HTTP 503s and 10 failed hours on the first run. Defaults are now 2 workers at 0.25 s
+   with jittered backoff on 429/503, so retrying workers do not resynchronise and recreate
+   the burst. The ledger handled this correctly without intervention: the following run
+   skipped all 86 settled hours and retried exactly the 10 failures.
+
+---
+
 ### Phase 2 — Cleaning as a reversible layer (2 weeks)
 
 **Tasks**
