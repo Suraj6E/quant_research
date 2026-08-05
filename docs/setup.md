@@ -55,20 +55,42 @@ First start creates the volumes and runs the schema bootstrap in
 Postgres — expect `macro_observation`, `macro_release`, `macro_series`:
 
 ```powershell
-docker compose exec postgres psql -U fx -d fx -c "\dt"
+docker compose exec postgres psql -U fxpit_admin -d fxpit -c "\dt"
 ```
 
 Confirm `known_at` came through as `timestamptz`, not `date`:
 
 ```powershell
-docker compose exec postgres psql -U fx -d fx -c "\d macro_observation"
+docker compose exec postgres psql -U fxpit_admin -d fxpit -c "\d macro_observation"
 ```
 
 ClickHouse — expect `tick_flag`, `tick_raw`:
 
 ```powershell
-docker compose exec clickhouse clickhouse-client --query "SHOW TABLES FROM fx"
+docker compose exec clickhouse clickhouse-client --query "SHOW TABLES FROM fxpit"
 ```
+
+## 5. Optional — FRED/ALFRED API key
+
+ALFRED is the only source here that needs an account, which is why it is
+**optional**: the pipeline must run to completion with `FRED_API_KEY` unset, and
+Philadelphia Fed RTDSM remains the primary vintage source.
+
+The keyless CSV endpoint is not a substitute — it accepts `vintage_date` and
+silently ignores it, returning current revised data. Verified: four different
+vintage dates returned byte-identical payloads.
+
+1. Get a key at <https://fredaccount.stlouisfed.org/apikeys> (free, instant).
+2. Paste it into `.env` as `FRED_API_KEY=`.
+3. Verify it returns genuine vintages:
+
+```powershell
+python scripts\check_fred_key.py
+```
+
+Note the API's real-time axis is **date-granularity**. It tells you a value
+became known on 2024-02-02, not at 08:30:00 ET, so release *times* still have to
+come from BLS/BEA schedules. ALFRED broadens coverage; it does not solve timing.
 
 ## Common commands
 
@@ -79,7 +101,7 @@ docker compose exec clickhouse clickhouse-client --query "SHOW TABLES FROM fx"
 | Stop, **destroy** data | `docker compose down -v` |
 | Service status | `docker compose ps` |
 | Logs | `docker compose logs -f clickhouse` |
-| Postgres shell | `docker compose exec postgres psql -U fx -d fx` |
+| Postgres shell | `docker compose exec postgres psql -U fxpit_admin -d fxpit` |
 | ClickHouse shell | `docker compose exec clickhouse clickhouse-client` |
 | Lint | `ruff check .` |
 | Format | `ruff format .` |
@@ -111,6 +133,14 @@ docker compose up -d
 
 `down -v` destroys all ingested data. Once real tick data exists, prefer
 hand-applied migrations.
+
+**ClickHouse database name is hardcoded in the schema.** `infra/clickhouse/init/01_schema.sql`
+qualifies its tables as `fxpit.*`, and that name must match `CLICKHOUSE_DB` in
+`.env`. This is not redundancy — the ClickHouse entrypoint runs init scripts
+*without* `--database` set, so unqualified `CREATE TABLE` lands in `default`
+while `$CLICKHOUSE_DB` is created and left empty. The failure is silent: the
+containers report healthy and the tables simply aren't where you expect. If you
+rename the database, edit both files.
 
 **Timezones.** Both containers are pinned to UTC and Postgres additionally sets
 `PGTZ=UTC`. Do not change this. Every point-in-time comparison depends on there

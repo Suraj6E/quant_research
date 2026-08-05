@@ -1,0 +1,37 @@
+# Hand-built tick fixture.
+#
+# The clean EURUSD rows are REAL, decoded from the Dukascopy .bi5 for
+# 2024-01-09 10:00 UTC on 2026-08-04. The pathological rows are SYNTHETIC and
+# each one violates exactly one sanity rule, so a failing detector names
+# itself.
+#
+# Expected violations, by design:
+#   crossed        bid > ask                          -> 1 row  (10:00:05.000)
+#   zero_spread    bid == ask                         -> 1 row  (10:00:06.000)
+#   non_monotonic  ts goes backwards within instrument-> 1 row  (10:00:04.500)
+#   duplicate      same (instrument, ts, source)      -> 2 rows (10:00:07.000)
+#   stale          identical quote repeated 4x        -> 4 rows (10:00:08.x)
+#
+# USDJPY rows are real and clean; they exist to prove the sanity rules hold
+# across a different decimal factor (JPY pairs use 1e3, EUR pairs 1e5).
+instrument,ts,bid,ask,bid_volume,ask_volume,source
+EURUSD,2024-01-09T10:00:00.020Z,1.09440,1.09443,0.90,3.60,dukascopy
+EURUSD,2024-01-09T10:00:00.475Z,1.09441,1.09444,1.13,0.75,dukascopy
+EURUSD,2024-01-09T10:00:01.102Z,1.09439,1.09442,2.25,1.50,dukascopy
+EURUSD,2024-01-09T10:00:02.338Z,1.09443,1.09445,0.75,4.20,dukascopy
+EURUSD,2024-01-09T10:00:03.901Z,1.09442,1.09446,3.00,1.13,dukascopy
+EURUSD,2024-01-09T10:00:04.500Z,1.09440,1.09444,1.50,1.50,dukascopy
+EURUSD,2024-01-09T10:00:04.100Z,1.09441,1.09445,1.20,0.90,dukascopy
+EURUSD,2024-01-09T10:00:05.000Z,1.09450,1.09447,1.00,1.00,dukascopy
+EURUSD,2024-01-09T10:00:06.000Z,1.09444,1.09444,0.60,0.60,dukascopy
+EURUSD,2024-01-09T10:00:07.000Z,1.09445,1.09448,1.00,1.00,dukascopy
+EURUSD,2024-01-09T10:00:07.000Z,1.09445,1.09448,1.00,1.00,dukascopy
+EURUSD,2024-01-09T10:00:08.000Z,1.09446,1.09449,0.80,0.80,dukascopy
+EURUSD,2024-01-09T10:00:08.250Z,1.09446,1.09449,0.80,0.80,dukascopy
+EURUSD,2024-01-09T10:00:08.500Z,1.09446,1.09449,0.80,0.80,dukascopy
+EURUSD,2024-01-09T10:00:08.750Z,1.09446,1.09449,0.80,0.80,dukascopy
+EURUSD,2024-01-09T10:00:09.400Z,1.09447,1.09450,2.10,1.35,dukascopy
+USDJPY,2024-01-09T10:00:00.126Z,143.946,143.952,3.60,1.20,dukascopy
+USDJPY,2024-01-09T10:00:01.884Z,143.948,143.955,1.20,2.40,dukascopy
+USDJPY,2024-01-09T10:00:03.502Z,143.951,143.957,0.90,1.80,dukascopy
+USDJPY,2024-01-09T10:00:05.117Z,143.949,143.956,2.70,0.90,dukascopy

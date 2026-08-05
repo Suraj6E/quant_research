@@ -5,7 +5,14 @@
 -- To re-apply after edits: `docker compose down -v && docker compose up -d`
 -- (this DESTROYS the ClickHouse volume).
 
-CREATE DATABASE IF NOT EXISTS fx;
+-- The database name below MUST match CLICKHOUSE_DB in .env.
+--
+-- It is hardcoded because the ClickHouse entrypoint runs init scripts WITHOUT
+-- --database set: unqualified CREATE TABLE silently lands in `default` while
+-- $CLICKHOUSE_DB is created but left empty. Verified empirically — the failure
+-- is silent, so qualify every table explicitly.
+
+CREATE DATABASE IF NOT EXISTS fxpit;
 
 -- --------------------------------------------------------------------------
 -- Raw ticks.
@@ -17,7 +24,7 @@ CREATE DATABASE IF NOT EXISTS fx;
 -- Bid and ask are stored separately and stay separate. Mid-price collapse is
 -- one of the four contamination sources the Phase 6 experiment measures.
 -- --------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS fx.tick_raw (
+CREATE TABLE IF NOT EXISTS fxpit.tick_raw (
   instrument   LowCardinality(String),
   ts           DateTime64(3, 'UTC'),
   bid          Float64,
@@ -48,7 +55,7 @@ ORDER BY (instrument, ts);
 -- The flag distribution by hour and instrument is a research deliverable in
 -- its own right, not just plumbing.
 -- --------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS fx.tick_flag (
+CREATE TABLE IF NOT EXISTS fxpit.tick_flag (
   instrument   LowCardinality(String),
   ts           DateTime64(3, 'UTC'),
   flag         LowCardinality(String),

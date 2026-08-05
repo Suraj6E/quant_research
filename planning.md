@@ -63,7 +63,15 @@ Holding periods of days to weeks. Research questions around carry, momentum, PPP
 
 Build the tick layer properly, but scope the initial pair universe and date range narrowly enough to stay tractable. Defer Path-B-only components (forward points, carry construction) to a follow-on project.
 
-**Decision required:** pick A, B, or C before writing any ingestion code. Everything below assumes C unless annotated.
+**DECIDED 2026-08-04: Path C.**
+
+Rationale, recorded so it can be argued with later:
+
+- Path B's critical input (forward points) has no free source, and the policy-rate proxy carries an error correlated with funding stress — wrong precisely when carry matters. That is a missing ingredient, not an engineering problem.
+- Path A's hard part is data volume, which is tractable work.
+- The Phase 6 contamination experiment ("EURUSD held N minutes after a CPI/payrolls release") is intraday by construction. Path B would require redesigning the project's flagship deliverable.
+
+C is therefore Path A with guardrails: build the tick layer properly, start at 7 majors from 2015, defer carry construction to a follow-on project. Extend backward only once the pipeline is stable.
 
 ---
 
@@ -112,9 +120,17 @@ All sources below are free and require no account. Verification status is stated
 **ALFRED (Archival FRED)**
 
 - Each observation carries `realtime_start` and `realtime_end` alongside `date`, which is exactly the bitemporal structure needed.
-- **Caveat:** the FRED/ALFRED API requires a free API key, which counts as registration under your constraint. Web CSV download endpoints may work without a key — this is untested and should be verified before relying on it.
+- **Caveat:** the FRED/ALFRED API requires a free API key, which counts as registration under your constraint.
 
-*Status: conditional. Do not architect around it until access without a key is confirmed.*
+*Status (verified 2026-08-04): **OPTIONAL, key required.***
+
+The keyless CSV endpoint does not work and fails **silently**, which is worse than failing loudly. `fredgraph.csv?id=PAYEMS&vintage_date=...` returns HTTP 200 and accepts any `vintage_date`, then ignores it. Four different vintage dates (2005, 2015, 2024, none) returned byte-identical payloads — sha256 `177efe81de346565` — all serving current revised data. Ask for the January 2005 vintage, receive today's numbers, no warning. Keep this as a worked example of the exact contamination the project exists to detect.
+
+With a key the API does serve genuine vintages via `realtime_start`/`realtime_end`, which map 1:1 onto `known_at`. Verified: 857 vintage dates for PAYEMS, and January 2024 payrolls revising 157700 → 157533 → 157560 → 157049 → 157032 across five vintages.
+
+ALFRED is therefore wired in as an **optional enrichment source**: the pipeline must run to completion with `FRED_API_KEY` unset, and RTDSM stays primary. This preserves the constraint's real purpose — anyone can clone the repo and reproduce the work without an account.
+
+**Limitation:** ALFRED's real-time axis is **date-granularity**. It says a value became known on 2024-02-02, not at 08:30:00 ET. It broadens coverage; it does not solve release timing.
 
 **ECB Data Portal / BIS / OECD**
 
@@ -330,7 +346,7 @@ Write the tests before the pipeline. This is the discipline that separates a res
 
 - Dukascopy month indices are zero-based in the URL path. Off-by-one here produces plausible-looking wrong data, which is the worst kind.
 - Prices are integer-encoded with a per-instrument decimal factor. JPY pairs differ from EUR pairs.
-- Weekends are absent, not empty. Distinguish "no file" from "empty file".
+- ~~Weekends are absent, not empty. Distinguish "no file" from "empty file".~~ **Corrected 2026-08-04 by measurement.** Sunday 03:00 UTC returned **HTTP 200 with a 0-byte body**, not a 404. Dukascopy serves an empty file for closed sessions, so HTTP status cannot distinguish closed-market from feed-gap — both look identical. The ingest ledger must consult the session calendar to make that call, which makes Phase 4 a dependency of Phase 1's coverage report rather than a later addition.
 - Some hours return valid but empty payloads legitimately (thin holiday sessions). Do not treat these as errors.
 
 **Deliverable:** populated `tick_raw` with a coverage report by instrument and month.
@@ -530,10 +546,10 @@ Phases 1 and 3 are the ones that historically overrun. If forced to cut, cut the
 
 ## 12. Immediate next actions
 
-1. Decide Path A, B, or C (Section 2). Blocking.
-2. Verify Dukascopy feed access with a single-day EURUSD pull.
-3. Verify Philadelphia Fed RTDSM download works without registration.
-4. Test whether ALFRED CSV download works without an API key. If yes, it becomes a valuable secondary vintage source. If no, drop it.
-5. Set up the repo and write the Phase 0 tests.
+1. ~~Decide Path A, B, or C (Section 2).~~ **DONE 2026-08-04 — Path C.**
+2. ~~Verify Dukascopy feed access with a single-day EURUSD pull.~~ **DONE.** 4,508 EURUSD ticks for 2024-01-09 10:00 UTC; zero crossed quotes, monotonic stamps, spreads 0.1–0.5 pip. Zero-based months confirmed empirically (month `00` → mean bid 1.09409 ≈ January; month `01` → 1.07665 ≈ February). JPY decimal factor 1e3 confirmed against USDJPY.
+3. ~~Verify Philadelphia Fed RTDSM download works without registration.~~ **DONE.** Eight files across the payrolls/CPI/GDP pages. `employMvMd.xlsx` (2.2 MB) has columns `EMPLOY64M12`…`EMPLOY26Mxx` (one per vintage) and rows `1943:11`…`2026:06` (ref periods) — the bitemporal grid in spreadsheet form. **Gotcha:** file URLs require a Sitecore query string (`?sc_lang=en&hash=…`); without it you get a soft-404 (HTTP 200 serving an HTML error page). The hash can rotate, so scrape the series page for links rather than hardcoding URLs. Also found: `Release_-Dates-Employment_Situation-BLS.xls`, actual BLS release dates, which covers much of Phase 3's "hard part" — note it is legacy `.xls`, not `.xlsx`.
+4. ~~Test whether ALFRED CSV download works without an API key.~~ **DONE — it does not, silently.** See §3.3. Reclassified as an optional key-gated enrichment source.
+5. ~~Set up the repo and write the Phase 0 tests.~~ **DONE 2026-08-04.** Red suite: 17 failing (all `NotImplementedError` from the unimplemented `as_of()`), 11 passing (fixture-validation). See `tests/SPEC.md`.
 
-Do not write ingestion code until items 1–4 are resolved.
+**Next:** Phase 1 — Dukascopy tick ingest. Items 1–4 are resolved, so ingestion code is unblocked.

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Infrastructure is scaffolded and verified; no pipeline code exists yet.** `src/fxpit/` is a bare package skeleton and `tests/` is empty — Phase 0 has not started.
+**Phase 0 is complete; Phase 1 has not started.** The acceptance suite is **red on purpose** — 17 failing (all `NotImplementedError` from the unimplemented `as_of()`), 11 passing (fixture-validation). A failure that is *not* a `NotImplementedError` means something real broke. See `tests/SPEC.md`.
+
+`src/fxpit/query/as_of.py` defines the read contract with unimplemented bodies; it is implemented in Phase 3. No ingestion code exists yet.
 
 `planning.md` is the specification. Read it before writing code in this repo; it is the source of truth for schema, phasing, and rationale. `docs/architecture.md` covers how the tiers are wired, `docs/setup.md` covers environment setup. This file records only the rules that are easy to violate accidentally.
 
@@ -30,18 +32,18 @@ pytest -m "not integration"      # skip tests needing a live stack
 
 Schema bootstrap in `infra/*/init/*.sql` runs **only against an empty volume**. Editing those files and restarting does nothing — either apply changes by hand or `docker compose down -v && docker compose up -d`, which destroys all ingested data.
 
-## Blocking decisions (planning.md §2, §12)
+## Resolved decisions (planning.md §2, §12) — all four blockers cleared 2026-08-04
 
-Do not write ingestion code until these are resolved:
-
-1. **Path A / B / C is undecided** and materially changes Phases 1–4. Path A (intraday) makes the tick layer central and demands timestamp-precise macro; Path B (multi-day) shifts ~70% of effort to macro/rates and hits the forward-points gap; Path C (both, narrow scope) is the document's working assumption but is *not* a decision. Everything in `planning.md` assumes C unless annotated.
-2. Dukascopy feed access verified with a single-day EURUSD pull.
-3. Philadelphia Fed RTDSM download verified to work without registration.
-4. ALFRED CSV download tested without an API key — if a key is required it is **out of scope** (see constraint below) and ALFRED gets dropped.
+1. **Path C decided.** Tick layer built properly, scoped to 7 majors from 2015; carry construction deferred to a follow-on project. Ingestion is unblocked.
+2. **Dukascopy verified.** Zero-based month indices confirmed empirically; JPY factor 1e3 vs 1e5 confirmed.
+3. **RTDSM verified.** Files need a Sitecore `?sc_lang=en&hash=…` query string — without it you get a soft-404 (HTTP 200 serving HTML). The hash rotates, so scrape the series page rather than hardcoding URLs.
+4. **ALFRED reclassified as optional, key-gated.** The keyless CSV accepts `vintage_date` and *silently ignores it*, returning current revised data — verified byte-identical across four vintage dates.
 
 ## Hard constraint: free, no registration
 
-Every data source must be free and require **no account, no login, no API key**. This is not a preference — it is what defines the project's source set. An API key requirement disqualifies a source (this is why ALFRED is conditional, and why kdb+ is excluded from the storage options).
+Every data source must be free and require **no account, no login, no API key**. This is what defines the project's source set, not a preference (it is also why kdb+ is excluded from the storage options).
+
+**The one carve-out:** ALFRED is wired in as an *optional enrichment source* behind `FRED_API_KEY`. The pipeline must run to completion with that variable unset, and Philadelphia Fed RTDSM stays primary. Never make ALFRED a hard dependency — the point of the constraint is that anyone can clone the repo and reproduce the work without an account. Note ALFRED's real-time axis is date-granularity, so it does not supply release *times*.
 
 ## Architecture
 
@@ -75,7 +77,9 @@ These exist because the whole point of the database is that it cannot leak futur
 
 ## Phase order
 
-Phase 0 (write the acceptance tests against an empty schema, watch them fail) comes **before** any pipeline code. The four test families are: no-clairvoyance, revision, tick sanity, cross-feed. Later phases: 1 tick ingest → 2 cleaning/flags → 3 bitemporal macro → 4 session & calendar → 5 validation harness → 6 contamination experiment. Each phase in `planning.md` has an explicit exit criterion; treat it as the definition of done.
+Phase 0 is **done** (red suite, `tests/SPEC.md`). Remaining: 1 tick ingest → 2 cleaning/flags → 3 bitemporal macro → 4 session & calendar → 5 validation harness → 6 contamination experiment. Each phase in `planning.md` has an explicit exit criterion; treat it as the definition of done.
+
+Do not "fix" a red acceptance test by weakening its assertion. The suite goes green when the pipeline provides the guarantee, not before — Phase 3's exit criterion is precisely that the no-clairvoyance and revision families pass. Raise `MIN_REVISED_PERIODS_FIXTURE` (currently 8) to the 50 that `planning.md` requires once real RTDSM vintages are loaded.
 
 ## Ingest gotchas (Phase 1)
 
@@ -83,7 +87,7 @@ Recorded because each produces plausible-looking wrong data rather than an error
 
 - Dukascopy month indices in the URL path are **zero-based**.
 - Prices are integer-encoded with a **per-instrument** decimal factor; JPY pairs differ from EUR pairs.
-- Weekends are *absent*, not empty — distinguish "no file" from "empty file".
+- Weekends return **HTTP 200 with a 0-byte body**, not a 404 (measured; `planning.md`'s original "absent, not empty" claim was wrong). HTTP status therefore cannot distinguish closed-market from feed-gap — the ingest ledger must consult the session calendar, making Phase 4 a dependency of Phase 1's coverage report.
 - Some hours legitimately return valid-but-empty payloads (thin holiday sessions). Not an error.
 - Ingest must be resumable and idempotent, with an ingest ledger recording what was fetched and whether it succeeded, so coverage gaps are visible rather than silent. Exit criterion for Phase 1 is that a re-run produces zero new rows and zero errors.
 

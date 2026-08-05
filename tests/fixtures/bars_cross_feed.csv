@@ -1,0 +1,27 @@
+# Hand-built cross-feed fixture: the SAME M1 bars from two independent feeds.
+#
+# All rows are SYNTHETIC but modelled on the real 2024-01-09 10:00 UTC EURUSD
+# level (~1.0944) taken from the Dukascopy pull.
+#
+# HistData is a SECOND OPINION, not a fallback. Where the feeds disagree
+# materially, at least one is wrong, and the disagreement rate is itself a
+# deliverable — so the test asserts that disagreements are LOGGED, never
+# silently reconciled or dropped.
+#
+# Designed disagreements (tolerance = 0.5 pip = 0.00005 on close):
+#   10:02  ask_close differs by 0.00012  -> exceeds tolerance
+#   10:04  bid_close differs by 0.00020  -> exceeds tolerance, near a round number
+#   10:05  present in dukascopy, ABSENT from histdata -> coverage gap, not agreement
+#   10:03  differs by 0.00002 -> WITHIN tolerance, must NOT be flagged
+instrument,ts,bid_open,bid_high,bid_low,bid_close,ask_open,ask_high,ask_low,ask_close,source
+EURUSD,2024-01-09T10:00:00Z,1.09440,1.09448,1.09438,1.09446,1.09443,1.09451,1.09441,1.09449,dukascopy
+EURUSD,2024-01-09T10:01:00Z,1.09446,1.09455,1.09444,1.09452,1.09449,1.09458,1.09447,1.09455,dukascopy
+EURUSD,2024-01-09T10:02:00Z,1.09452,1.09460,1.09450,1.09458,1.09455,1.09463,1.09453,1.09461,dukascopy
+EURUSD,2024-01-09T10:03:00Z,1.09458,1.09466,1.09455,1.09463,1.09461,1.09469,1.09458,1.09466,dukascopy
+EURUSD,2024-01-09T10:04:00Z,1.09463,1.09472,1.09461,1.09470,1.09466,1.09475,1.09464,1.09473,dukascopy
+EURUSD,2024-01-09T10:05:00Z,1.09470,1.09478,1.09468,1.09475,1.09473,1.09481,1.09471,1.09478,dukascopy
+EURUSD,2024-01-09T10:00:00Z,1.09440,1.09448,1.09438,1.09446,1.09443,1.09451,1.09441,1.09449,histdata
+EURUSD,2024-01-09T10:01:00Z,1.09446,1.09455,1.09444,1.09452,1.09449,1.09458,1.09447,1.09455,histdata
+EURUSD,2024-01-09T10:02:00Z,1.09452,1.09460,1.09450,1.09458,1.09455,1.09463,1.09453,1.09473,histdata
+EURUSD,2024-01-09T10:03:00Z,1.09458,1.09466,1.09455,1.09465,1.09461,1.09469,1.09458,1.09468,histdata
+EURUSD,2024-01-09T10:04:00Z,1.09463,1.09472,1.09461,1.09450,1.09466,1.09475,1.09464,1.09453,histdata

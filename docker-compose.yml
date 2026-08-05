@@ -11,9 +11,10 @@ services:
     container_name: fx_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-fx}
-      POSTGRES_USER: ${POSTGRES_USER:-fx}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-fxpit}
+      POSTGRES_USER: ${POSTGRES_USER:-fxpit_admin}
+      # No default: fail loudly rather than silently start with a weak password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       # Keep the server in UTC. known_at is TIMESTAMPTZ and every point-in-time
       # comparison depends on there being no ambiguity about the session zone.
       TZ: UTC
@@ -25,7 +26,7 @@ services:
       # Runs only on first initialisation of an empty data volume.
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fx} -d ${POSTGRES_DB:-fx}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fxpit_admin} -d ${POSTGRES_DB:-fxpit}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,9 +36,9 @@ services:
     container_name: fx_clickhouse
     restart: unless-stopped
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-fx}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-fx}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-fxpit}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-fxpit_admin}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
       TZ: UTC
     ports:

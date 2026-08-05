@@ -1,16 +1,18 @@
 # Tests
 
-Empty until Phase 0. `pytest` currently collects nothing and exits with code 5.
+**The suite is RED on purpose.** See [`SPEC.md`](SPEC.md) for what each test
+means and its failure mode in one sentence — that document is the Phase 0
+deliverable.
 
-Phase 0 writes four test families against an empty schema, and **they are
-supposed to fail** — a red suite is the deliverable. See `planning.md` §6.
+```powershell
+pytest                 # whole suite: 17 failed, 11 passed
+pytest -m acceptance   # the four point-in-time families
+```
 
-| Family | Assertion |
-|---|---|
-| No-clairvoyance | For N random macro facts, `as_of(known_at − 1s)` returns nothing for that fact |
-| Revision | For ≥50 series-periods where first print ≠ final, `as_of` between them returns the first print |
-| Tick sanity | Timestamps non-decreasing within instrument; no `bid > ask`; no negative spread; no duplicate `(instrument, ts, source)` |
-| Cross-feed | Dukascopy and HistData M1 bars agree within tolerance; every disagreement logged, not suppressed |
+Every failure is `NotImplementedError` from `fxpit.query.as_of`, which is
+unimplemented until Phase 3. The 11 passing tests validate the fixtures
+themselves — they prove the test data still contains the pathologies the
+detectors must find.
 
-Mark tests needing a live stack with `@pytest.mark.integration`, and the
-point-in-time families with `@pytest.mark.acceptance`.
+If a failure ever appears that is *not* a `NotImplementedError`, something real
+broke; check it before assuming the red is expected.
