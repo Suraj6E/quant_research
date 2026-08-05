@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phases 0–5 are complete; Phase 6 is next.**
+**All seven phases are built.**
 
-**The whole suite is green: 100 passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
+**The whole suite is green: 116+ passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
 
 Phase 0's test bodies have never been edited. `conftest.py` supplies the backing store they always assumed. Keep it that way.
 
@@ -185,3 +185,19 @@ python -m fxpit.validation --report
 - **The anchor reports a trend, not a verdict.** One day's difference is noise. A test proves it catches +1h and +5h45m errors and deliberately does *not* assert the −1h case, because with the current sample it genuinely lacks that power. Do not add that assertion to make the suite look stronger.
 - **Only EUR-based pairs have a direct ECB anchor.** Anything else needs a cross, which carries both legs' error; `run_drift_anchor` refuses rather than silently crossing.
 - **Success criterion #3 is PARTIALLY met.** HistData is not retrievable without a headless browser (measured). Do not mark it complete or redefine the criterion — the honest status is recorded in planning.md and shown in the UI.
+
+
+## Phase 6 experiment (src/fxpit/experiment/)
+
+```powershell
+python -m fxpit.experiment --plan --start 2022-01-01 --end 2025-01-01
+python -m fxpit.experiment --run  --start 2022-01-01 --end 2025-01-01
+```
+
+- **This is the only place strategy code is permitted**, and it is a measuring instrument. Do not make the rule more interesting — an interesting rule invites tuning, and tuning reintroduces the selection effects the design exists to isolate.
+- **`docs/preregistration.md` was written before any variant ran**, and its sha256 is printed with every result so the claim is checkable. If the rule must change, record the change in its §8 with the reason and leave the original visible. A test asserts the document and the code agree on `HOLD_MINUTES` and the variant set.
+- **Each variant differs from its neighbour in exactly one dimension** (`use_revised`, `date_only`, `use_mid`). A test enforces this. If a variant changed two things its gap would measure both and the decomposition — the entire deliverable — would be meaningless.
+- **An event is traded only when every variant can price it.** Otherwise the arms compare different event sets and the differences partly measure sample composition.
+- **A vintage date is only a release if it introduces a new reference period.** CPI publishes ~13 vintages a year; the extras are annual seasonal-factor revisions, and trading them would be trading an event that did not happen.
+- **The surprise measure is synthetic and labelled everywhere.** No free consensus forecasts exist. It is the same construction in all four arms, so its imperfection is a constant across the comparison and cannot manufacture a between-arm difference — that argument is why the experiment survives the limitation, and it should be restated wherever the measure is used.
+- **`run_experiment`, not `run`.** The function was renamed because `__init__` exporting `run` shadowed the `run` module and broke every `from fxpit.experiment import run as runner`.

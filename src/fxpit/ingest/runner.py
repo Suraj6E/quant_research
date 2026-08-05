@@ -56,6 +56,7 @@ def ingest(
     pause: float = 0.25,
     dry_run: bool = False,
     progress: bool = True,
+    only_hours: set[int] | None = None,
 ) -> RunReport:
     """Ingest [start, end) for each instrument.
 
@@ -84,7 +85,7 @@ def ingest(
             print(f"recovered {len(stale)} interrupted hour(s) from a previous run")
 
         for instrument in instruments:
-            hours = hours_between(start, end)
+            hours = hours_between(start, end, only_hours)
             report.requested += len(hours)
 
             settled = ledger.settled_hours(pg, instrument, hours)

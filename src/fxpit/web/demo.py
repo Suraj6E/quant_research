@@ -51,26 +51,12 @@ def _rng(salt: str) -> random.Random:
 # fxpit.web.live.
 
 
-def contamination_variants() -> list[dict]:
-    """The Phase 6 result table: four data regimes, one pre-registered rule.
-
-    The ordering (D > C > B > A) is hypothesis H1, not a finding. These
-    numbers are invented; the experiment has not been run.
-    """
-    return [
-        {"variant": "A - Honest", "macro": "First print, as_of release",
-         "timestamp": "Exact release timestamp", "costs": "Actual bid/ask",
-         "sharpe": 0.31, "highlight": True},
-        {"variant": "B - Revised values", "macro": "Final revised value",
-         "timestamp": "Exact release timestamp", "costs": "Actual bid/ask",
-         "sharpe": 0.58, "highlight": False},
-        {"variant": "C - Revised + date-only", "macro": "Final revised value",
-         "timestamp": "Date only, entry at day open", "costs": "Actual bid/ask",
-         "sharpe": 1.04, "highlight": False},
-        {"variant": "D - C plus mid-price", "macro": "Final revised value",
-         "timestamp": "Date only", "costs": "Mid price, no spread",
-         "sharpe": 1.67, "highlight": False},
-    ]
+# Phase 6's generator (contamination_variants) was DELETED on 2026-08-05 when
+# the experiment landed. The result table now comes from a live run.
+#
+# `hypotheses()` below is NOT demo data in the same sense - it is the
+# pre-registered hypothesis list from planning.md §8, which is a fixed
+# statement rather than a synthetic number. It stays.
 
 
 def hypotheses() -> list[dict[str, str]]:

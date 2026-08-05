@@ -703,6 +703,69 @@ Evaluate under four data regimes:
 
 ---
 
+**HARNESS COMPLETE 2026-08-05; the run is UNDERPOWERED and says so.**
+Implemented in `src/fxpit/experiment/`.
+
+### Pre-registration
+
+`docs/preregistration.md` was written **before any variant ran**, and its sha256
+(`a96c0c7287807cfb`) is printed with every result so the claim is checkable rather than
+asserted. A test enforces that the document and the code agree on the holding period, the
+event count per year, and the variant set — a pre-registration that disagrees with the code
+is worse than none, because it documents a rule nobody ran.
+
+### Event construction
+
+Release dates come from ALFRED vintage dates, which also **closes the task Phase 3 left
+open**: RTDSM publishes a vintage month and cannot say which day a value became public.
+Combined with the standing 08:30 ET release time — derived from local time, so 13:30 UTC in
+winter and 12:30 in summer — that gives an instant precise enough for an intraday
+experiment.
+
+**A vintage date only counts as a release if it introduces a new reference period.** CPI
+produces ~13 vintages a year because the annual seasonal-factor revision republishes old
+periods without adding a new one; trading those would be trading an event that did not
+happen. Filtering gives **72 genuine releases** in 2022-2024 from 75 vintage dates.
+
+### The result, and why it cannot be read as one
+
+| Variant | n | Mean bps | Sharpe |
+|---|---|---|---|
+| A — Honest | 8 | 8.82 | 2.228 |
+| B — Revised values | 8 | −0.55 | −0.122 |
+| C — Revised + date-only | 8 | 5.22 | 1.902 |
+| D — C plus mid-price | 8 | 5.58 | 2.022 |
+
+**8 of 72 events. The sample is too small for these numbers to mean anything**, and that is
+enforced structurally rather than left to prose: `Experiment.underpowered` is a property of
+the result object, the CLI prints a banner, and the hypothesis section refuses to render a
+verdict. H1's ordering would read "does not hold", but at this N that is a coin toss.
+
+The differences between arms are small quantities measured against the variance of
+30-minute FX returns. At eight events that variance swamps them completely.
+
+### Why only 8 of 72
+
+**Dukascopy IP-blocked the ingest.** After roughly 360 requests in a short window the feed
+stopped returning HTTP responses at all — TCP connect timeouts, not 429s. 377,418 ticks
+landed with zero recorded errors before it cut off; the pipeline behaved correctly and the
+source refused.
+
+This is a real operational constraint and belongs in the risk register alongside §10's
+"Dukascopy changes or restricts the feed": **a large historical ingest must be paced over
+hours or days, not minutes.** The ledger makes the remaining work resumable — a re-run
+fetches only what is missing — so completing the experiment is ingest time, not new code.
+
+### One channel that IS validated
+
+C → D measures the mid-price assumption, which should equal exactly one spread per round
+trip. Observed: **+0.36 bps against a measured median EURUSD spread of 0.271 bps** —
+slightly higher because the date-only arms enter at 00:00 UTC in the thin Asian session,
+where spreads are wider. The channel measures what it claims to, independent of whether the
+sample is large enough to interpret the strategy result.
+
+---
+
 ## 7. Expected end result
 
 **Artifacts**

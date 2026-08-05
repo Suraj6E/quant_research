@@ -220,8 +220,18 @@ def fetch_hour(
     return HourResult(instrument, hour, FetchStatus.ERROR, [], 0, last_error)
 
 
-def hours_between(start: datetime, end: datetime) -> list[datetime]:
-    """Every UTC hour in [start, end). Weekend hours are included on purpose -
+def hours_between(
+    start: datetime, end: datetime, only_hours: set[int] | None = None
+) -> list[datetime]:
+    """Every UTC hour in [start, end), optionally restricted to `only_hours`.
+
+    The hour filter exists for targeted ingest: the Phase 6 experiment reads a
+    handful of hours around each macro release, and fetching whole days would
+    be four times the requests for no benefit. The ledger still records exactly
+    which hours were attempted, so partial coverage stays visible rather than
+    looking like a gap.
+
+    Weekend hours are included on purpose -
     they are fetched, come back empty, and are recorded as such. Skipping them
     here would leave the ledger unable to distinguish "closed" from "never
     attempted".
@@ -232,6 +242,7 @@ def hours_between(start: datetime, end: datetime) -> list[datetime]:
     stop = end.astimezone(UTC)
     out = []
     while cursor < stop:
-        out.append(cursor)
+        if only_hours is None or cursor.hour in only_hours:
+            out.append(cursor)
         cursor += timedelta(hours=1)
     return out

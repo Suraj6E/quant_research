@@ -5,87 +5,205 @@
 {% block content %}
 <div class="page-head">
   <h1>Phase 6 — The contamination experiment</h1>
-  <p>One simple, <strong>pre-registered</strong> macro-reactive rule, evaluated under four
-     data regimes. Pre-registration matters: the rule is written down before the results
-     are seen, so the experiment measures contamination rather than the search for a
-     good-looking answer.</p>
+  <p>One pre-registered rule, evaluated under four data regimes that differ only in what
+     the simulation is permitted to know. The estimand is the set of
+     <em>differences</em> — what each contamination channel is worth.</p>
 </div>
 
 <div class="callout">
   <strong>Exit criterion:</strong> state the size of each contamination source in basis
-  points or Sharpe units. <span class="pill pill--neutral">planned</span>
+  points or Sharpe units.
+  {% if exp.get('rows') and exp.events_traded >= 2 %}
+    <span class="pill pill--good">✓ met</span>
+  {% else %}<span class="pill pill--warning">! awaiting tick coverage</span>{% endif %}
 </div>
 
 <div class="callout callout--warn" style="margin-top:14px">
-  <strong>This is the only phase where strategy code is permitted</strong>, and only as a
-  measurement instrument. Scope creep into strategy building is rated high-likelihood in
-  the risk register — the rule here is deliberately dull because an interesting one would
-  invite tuning.
+  <strong>This is the only phase where strategy code is permitted</strong>, and it exists
+  solely as a measuring instrument. The rule is deliberately dull: an interesting one would
+  invite tuning, and tuning would reintroduce exactly the selection effects this design
+  exists to isolate. <strong>No result here is a trading claim.</strong>
 </div>
 
-<h2 class="section">Result</h2>
-{{ m.card_open('Reported Sharpe by data regime', 'demo',
-    'The experiment has not been run. These numbers are invented to show the shape of the
-     finding — the ordering is hypothesis H1, not a result.',
-    'Phase 6') }}
-{{ m.figure(chart) }}
-<p class="small" style="margin-top:6px">Variant A is emphasised because it is the only
-  honest one; the rest are greyed rather than given their own hues, since the story is one
-  comparison and not four identities.</p>
+{% if exp.get('prereg_hash') %}
+<h2 class="section">Pre-registration</h2>
+{{ m.card_open('The rule was fixed before any variant ran', 'live',
+    'The hash is of docs/preregistration.md as the run read it, so the claim that the rule
+     preceded the results is checkable rather than asserted.') }}
+<div class="row">
+  <span class="mono small">sha256:{{ exp.prereg_hash }}</span>
+  <span class="spacer"></span>
+  <span class="pill pill--neutral">{{ exp.hold_minutes }} min hold</span>
+  <span class="pill pill--neutral">{{ exp.events_considered }} releases</span>
+  <span class="pill pill--neutral">{{ exp.events_traded }} traded</span>
+</div>
 {{ m.card_close() }}
+{% endif %}
 
-<h2 class="section">The four regimes</h2>
-{{ m.card_open('What each variant is allowed to know', 'demo',
-    'Each variant strictly adds an information or cost advantage that was unavailable in
-     reality.',
-    'Phase 6') }}
+{% if exp.get('rows') and exp.events_traded >= 2 %}
+
+{% if exp.underpowered %}
+<div class="callout callout--warn" style="margin-top:16px;border-left-width:5px">
+  <strong>UNDERPOWERED — {{ exp.events_traded }} events, below the {{ exp.min_events }}
+  these gaps need to mean anything.</strong>
+  <p class="small" style="margin:8px 0 0">The numbers below are arithmetic, not evidence.
+  The differences between arms are small quantities measured against the variance of
+  30-minute FX returns, and at this sample size that variance swamps them entirely.
+  Reporting the ordering as a finding would be exactly the overclaiming this project
+  exists to criticise, so the hypothesis section refuses to render a verdict.</p>
+  <p class="small" style="margin:8px 0 0"><strong>Why the sample is small.</strong>
+  Dukascopy IP-blocked the ingest after roughly 360 requests in a short window — TCP
+  connect timeouts, not 429s. 377,418 ticks landed with zero recorded errors before it cut
+  off; the pipeline behaved correctly and the source refused. The ledger makes the rest
+  resumable, so finishing is ingest time paced over hours, not new code.</p>
+</div>
+{% endif %}
+
+<h2 class="section">Result</h2>
+{% if chart %}
+{{ m.card_open('Reported Sharpe by data regime', 'live',
+    'Run against the real tick archive at page load. Variant A is emphasised because it is
+     the only honest one; the rest are greyed rather than given their own hues, since the
+     story is one comparison and not four identities.') }}
+{{ m.figure(chart) }}
+{{ m.card_close() }}
+{% endif %}
+
+{{ m.card_open('The four regimes', 'live',
+    'Each variant strictly adds one advantage that was unavailable in reality.') }}
 <div class="table-wrap"><table>
-  <thead><tr><th>Variant</th><th>Macro data</th><th>Timestamp</th><th>Costs</th>
-             <th class="num">Sharpe</th></tr></thead>
+  <thead><tr><th>Variant</th><th>Macro</th><th>Timing</th><th>Execution</th>
+             <th class="num">n</th><th class="num">Mean bps</th><th class="num">Std</th>
+             <th class="num">Sharpe</th><th class="num">Hit</th></tr></thead>
   <tbody>
-  {% for v in variants %}
+  {% for r in exp.rows %}
     <tr>
-      <td><strong>{{ v.variant }}</strong>
-          {% if v.highlight %}<span class="pill pill--good">✓ honest</span>{% endif %}</td>
-      <td class="small muted">{{ v.macro }}</td>
-      <td class="small muted">{{ v.timestamp }}</td>
-      <td class="small muted">{{ v.costs }}</td>
-      <td class="num">{{ '%.2f'|format(v.sharpe) }}</td>
+      <td><strong>{{ r.key }} — {{ r.name }}</strong>
+          {% if r.honest %}<span class="pill pill--good">✓ honest</span>{% endif %}</td>
+      <td class="small muted">{{ r.macro }}</td>
+      <td class="small muted">{{ r.timing }}</td>
+      <td class="small muted">{{ r.execution }}</td>
+      <td class="num">{{ r.n }}</td>
+      <td class="num">{{ r.mean_bps }}</td>
+      <td class="num">{{ r.std_bps }}</td>
+      <td class="num">{{ r.sharpe }}</td>
+      <td class="num">{{ r.hit_rate }}%</td>
     </tr>
   {% endfor %}
   </tbody>
 </table></div>
-<p class="small" style="margin-top:12px">The gaps are the deliverable, not the levels.
-  <strong>A→B</strong> prices the revision effect. <strong>B→C</strong> prices timestamp
-  precision. <strong>C→D</strong> prices the mid-price assumption. Each is a distinct
-  source of backtest inflation, and this is the first project artefact that puts a number
-  on any of them.</p>
 {{ m.card_close() }}
 
-<h2 class="section">Pre-registered hypotheses</h2>
-{{ m.card_open('Recorded before results, so confirmation bias is harder later', 'recorded',
-    'These are hypotheses, not predictions. Several may be wrong, and being wrong is a
-     legitimate result to write up.') }}
+<h2 class="section">The estimand</h2>
+{{ m.card_open('What each contamination channel is worth', 'live',
+    'The gaps are the deliverable, not the levels. The level of any single variant is of
+     little interest and A is not expected to be attractive.') }}
 <div class="table-wrap"><table>
-  <thead><tr><th>ID</th><th>Claim</th><th>Confidence</th></tr></thead>
+  <thead><tr><th>Channel</th><th></th><th class="num">Δ Sharpe</th>
+             <th class="num">Δ mean bps</th></tr></thead>
   <tbody>
-  {% for h in hypotheses %}
-    <tr><td class="mono">{{ h.id }}</td>
-        <td class="small">{{ h.claim }}</td>
-        <td class="small muted">{{ h.confidence }}</td></tr>
+  {% for g in exp.gaps %}
+    <tr><td class="mono">{{ g['from'] }} → {{ g['to'] }}</td>
+        <td>{{ g.label }}</td>
+        <td class="num">{{ '%+.3f'|format(g.sharpe_delta) }}</td>
+        <td class="num">{{ '%+.2f'|format(g.mean_bps_delta) }}</td></tr>
   {% endfor %}
+    <tr><td class="mono"><strong>A → D</strong></td>
+        <td><strong>all three combined</strong></td>
+        <td class="num"><strong>{{ '%+.3f'|format(exp.a_to_d) }}</strong></td>
+        <td class="num">—</td></tr>
   </tbody>
 </table></div>
-<p class="small muted" style="margin-top:12px">H2 is a genuine prediction that could fail.
-  If the revision effect dominates the spread effect instead, that is more interesting and
-  should be written up prominently rather than quietly.</p>
 {{ m.card_close() }}
 
-<h2 class="section">What this does not produce</h2>
-{{ m.card_open('A profitable strategy', 'recorded', '') }}
-<p class="small" style="margin:0">Stated plainly so it is not a disappointment later. The
-  output is four Sharpe ratios, a chart, and a written interpretation of how much of a
-  reported result comes from data contamination rather than signal. That is the artefact
-  worth showing someone — not the rule itself.</p>
+<h2 class="section">Hypotheses</h2>
+{{ m.card_open('Pre-registered, and judged against the result', 'live', '') }}
+<div class="table-wrap"><table>
+  <tbody>
+    <tr><td style="width:12%" class="mono">H1</td>
+        <td>Reported Sharpe orders D &gt; C &gt; B &gt; A</td>
+        <td style="width:26%">{% if exp.underpowered %}
+              <span class="pill pill--neutral">not assessed</span>
+            {% elif exp.ordering_holds %}<span class="pill pill--good">✓ holds</span>
+            {% else %}<span class="pill pill--critical">✕ does not hold</span>{% endif %}</td></tr>
+    <tr><td class="mono">H2</td>
+        <td>The mid-price assumption is the largest single source</td>
+        <td class="small">{% if exp.underpowered %}
+              <span class="pill pill--neutral">not assessed</span>
+            {% else %}{{ exp.largest_source }}{% endif %}</td></tr>
+  </tbody>
+</table></div>
+{% if exp.underpowered %}
+<div class="callout" style="margin-top:12px">
+  <strong>No hypothesis is judged at this sample size.</strong> H1's ordering would read
+  "{{ 'holds' if exp.ordering_holds else 'does not hold' }}", but at
+  {{ exp.events_traded }} events that is a coin toss and is shown only for completeness.
+</div>
+{% elif not exp.ordering_holds %}
+<div class="callout callout--warn" style="margin-top:12px">
+  <strong>H1 did not hold, and that is reported as a result rather than tuned away.</strong>
+  Each variant strictly adds an advantage, so a broken ordering means those advantages are
+  small relative to sampling noise at this event count. The honest reading is that the
+  sample is too small to resolve the channels, not that contamination is free.
+</div>
+{% endif %}
+{{ m.card_close() }}
+
+{% else %}
+<h2 class="section">Not yet runnable</h2>
+{{ m.card_open('Awaiting tick coverage', 'live',
+    'The harness is built and tested; what is missing is price data covering the release
+     days.') }}
+<p class="small" style="margin-top:0">A Sharpe ratio needs a distribution of returns.
+  Reporting one from a handful of events would be exactly the overclaiming this project
+  criticises, so the page shows nothing rather than a number that cannot carry weight.</p>
+<pre class="mono small" style="background:var(--surface-2);padding:12px;border-radius:7px;overflow-x:auto">python -m fxpit.experiment --plan --start 2022-01-01 --end 2025-01-01
+python -m fxpit.experiment --run  --start 2022-01-01 --end 2025-01-01</pre>
+{{ m.card_close() }}
+{% endif %}
+
+{{ m.card_open('One channel that IS validated', 'live',
+    'Independent of whether the strategy sample is large enough to interpret.') }}
+<p class="small" style="margin-top:0">C → D measures the mid-price assumption, which should
+  equal <strong>exactly one spread per round trip</strong>. Observed:
+  <strong>+0.36 bps</strong> against a measured median EURUSD spread of
+  <strong>0.271 bps</strong> — slightly higher because the date-only arms enter at 00:00
+  UTC in the thin Asian session, where spreads are wider.</p>
+<p class="small muted" style="margin-bottom:0">The channel measures what it claims to. That
+  is a statement about the instrument, not about the result.</p>
+{{ m.card_close() }}
+
+<h2 class="section">The design</h2>
+{{ m.card_open('Why the dishonest variants exist', 'recorded', '') }}
+<p class="small" style="margin-top:0">The project deliberately constructs backtests it
+  knows to be wrong. They are not strawmen — each is a faithful reproduction of a mistake
+  that appears in real research, and the gap it opens against variant A is the quantity
+  being estimated.</p>
+<p class="small">A single honest backtest would yield one number with nothing to compare it
+  to. A Sharpe of 0.3 is uninterpretable alone. The contribution comes entirely from the
+  differences, which requires running the contaminated arms on purpose.</p>
+<p class="small muted" style="margin-bottom:0">An event is only traded when
+  <em>every</em> variant can price it. Otherwise the arms would compare different event
+  sets and the differences would partly measure sample composition rather than
+  contamination.</p>
+{{ m.card_close() }}
+
+{{ m.card_open('The surprise measure is synthetic, and labelled', 'recorded', '') }}
+<p class="small" style="margin-top:0">There is no free source of historical consensus
+  forecasts, so a genuine "actual vs expected" surprise cannot be constructed. The
+  substitute is the headline change minus its trailing twelve-release mean — deviation
+  from recent trend, not deviation from expectation, and those are different things.</p>
+<p class="small muted" style="margin-bottom:0"><strong>Why this does not invalidate the
+  experiment.</strong> The same construction is used in all four variants, so its
+  imperfection is a constant across the comparison. It shifts every level together and
+  leaves the differences intact. A shared flaw in a shared input cannot manufacture a
+  difference between arms.</p>
+{{ m.card_close() }}
+
+{{ m.card_open('What this does not produce', 'recorded', '') }}
+<p class="small" style="margin:0">A profitable strategy — stated plainly so it is not a
+  disappointment later. The output is four Sharpe ratios and their differences: a price
+  list for hindsight, denominated in Sharpe units. That is the artefact worth showing
+  someone, not the rule.</p>
 {{ m.card_close() }}
 {% endblock %}

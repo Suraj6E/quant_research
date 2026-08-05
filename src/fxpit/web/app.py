@@ -63,7 +63,7 @@ PHASES = [
         6,
         "Contamination experiment",
         "1-2 weeks",
-        "next",
+        "done",
         "Each contamination source sized in bps or Sharpe units",
     ),
 ]
@@ -344,18 +344,25 @@ def phase5(request: Request):
 
 @app.get("/phase/6", response_class=HTMLResponse)
 def phase6(request: Request):
-    variants = demo.contamination_variants()
-    chart = bar_chart(
-        [v["variant"].split(" - ")[0] for v in variants],
-        [v["sharpe"] for v in variants],
-        places=2,
-        highlight=0,
-        caption="Reported Sharpe by data regime - A is the only honest one",
-    )
+    """Phase 6 runs the four variants live. The demo generators this route used
+    to call were deleted when the experiment landed.
+    """
+    exp = live.experiment_result()
+
+    chart = None
+    if exp.get("rows") and exp["rows"][0]["n"] >= 2:
+        chart = bar_chart(
+            [r["key"] for r in exp["rows"]],
+            [float(r["sharpe"]) for r in exp["rows"]],
+            places=2,
+            highlight=0,
+            caption="Reported Sharpe by data regime - A is the only honest one",
+        )
+
     return templates.TemplateResponse(
         request,
         "phase6.html",
-        ctx(active=6, variants=variants, chart=chart, hypotheses=demo.hypotheses()),
+        ctx(active=6, exp=exp, chart=chart, hypotheses=demo.hypotheses()),
     )
 
 

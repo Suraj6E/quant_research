@@ -76,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="concurrent fetches; >2 draws HTTP 503 throttling (measured)")
     p.add_argument("--pause", type=float, default=0.25, help="courtesy delay per request")
     p.add_argument("--dry-run", action="store_true", help="show what would be fetched")
+    p.add_argument("--hours", nargs="+", type=int, metavar="H",
+                   help="restrict to these UTC hours (targeted ingest)")
     p.add_argument("--report", action="store_true", help="coverage report, then exit")
     p.add_argument("--verify-idempotent", action="store_true",
                    help="ingest, then ingest again and assert the second run is a no-op")
@@ -90,8 +92,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.end <= args.start:
         p.error("--end must be after --start")
 
+    only_hours = set(args.hours) if args.hours else None
     first = ingest(instruments, args.start, args.end, workers=args.workers,
-                   pause=args.pause, dry_run=args.dry_run)
+                   pause=args.pause, dry_run=args.dry_run, only_hours=only_hours)
     print()
     print(f"run 1: {first.line()}")
     for e in first.errors[:10]:
@@ -103,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print("re-running the same range to verify idempotency...")
     second = ingest(instruments, args.start, args.end, workers=args.workers,
-                    pause=args.pause, progress=False)
+                    pause=args.pause, progress=False, only_hours=only_hours)
     print(f"run 2: {second.line()}")
     print()
 

@@ -627,6 +627,95 @@ CROSS_FEED_STATUS = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Phase 6 — the contamination experiment.
+# --------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=4)
+def experiment_result(start_iso: str = "2022-01-01", end_iso: str = "2025-01-01") -> dict:
+    """Run the four variants and return everything the page needs.
+
+    Cached: the run is deterministic given the tick archive, and re-running it
+    on every page load made the page take minutes. Call `.cache_clear()` after
+    ingesting more data.
+
+    Returns an empty dict rather than raising when the release cache or the
+    tick coverage is missing, so the page can say what is absent instead of
+    5xx-ing.
+    """
+    import json
+    from datetime import date as _date
+    from datetime import datetime as _dt
+
+    try:
+        from fxpit.config import ROOT as _ROOT
+        from fxpit.experiment import releases as rel
+        from fxpit.experiment import variants as V
+        from fxpit.experiment.run import run_experiment
+
+        cache = _ROOT / "data" / "experiment_releases.json"
+        if not cache.exists():
+            return {}
+        raw = json.loads(cache.read_text(encoding="utf-8"))
+        events = [
+            rel.Release(
+                series_id=r["series_id"],
+                release_date=_date.fromisoformat(r["release_date"]),
+                release_ts=_dt.fromisoformat(r["release_ts"]),
+                ref_period=_date.fromisoformat(r["ref_period"]),
+                first_print=r["first_print"],
+                final_value=r["final_value"],
+                surprise_first=r["surprise_first"],
+                surprise_final=r["surprise_final"],
+            )
+            for r in raw
+            if start_iso <= r["release_date"] < end_iso
+        ]
+        if not events:
+            return {}
+
+        exp = run_experiment(events)
+        rows = []
+        for v in V.VARIANTS:
+            r = exp.results[v.key]
+            rows.append({
+                "key": v.key, "name": v.name, "macro": v.macro,
+                "timing": v.timing, "execution": v.execution,
+                "n": r.n, "mean_bps": round(r.mean_bps, 2),
+                "std_bps": round(r.std_bps, 2), "sharpe": round(r.sharpe, 3),
+                "hit_rate": round(100 * r.hit_rate, 1),
+                "total_bps": round(r.total_bps, 1),
+                "honest": v.key == "A",
+            })
+        labels = {
+            ("A", "B"): "revision leakage",
+            ("B", "C"): "timestamp coarsening",
+            ("C", "D"): "mid-price assumption",
+        }
+        gaps = [
+            {**g, "label": labels[(g["from"], g["to"])]}
+            for g in exp.gaps
+        ]
+        return {
+            "rows": rows,
+            "gaps": gaps,
+            "events_considered": exp.events_considered,
+            "events_traded": exp.results["A"].n,
+            "prereg_hash": exp.prereg_hash,
+            "ordering_holds": exp.ordering_holds,
+            "underpowered": exp.underpowered,
+            "min_events": __import__(
+                "fxpit.experiment.run", fromlist=["x"]
+            ).MIN_EVENTS_FOR_INTERPRETATION,
+            "largest_source": exp.largest_source,
+            "hold_minutes": V.HOLD_MINUTES,
+            "a_to_d": round(exp.results["D"].sharpe - exp.results["A"].sharpe, 3),
+        }
+    except Exception:
+        return {}
+
+
 def revised_period_count() -> int:
     """How many (series, ref_period) pairs actually got revised in the fixture."""
     by_key: dict[tuple[str, date], list] = {}
