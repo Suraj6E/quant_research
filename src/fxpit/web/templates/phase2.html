@@ -6,62 +6,180 @@
 <div class="page-head">
   <h1>Phase 2 — Cleaning as a reversible layer</h1>
   <p>Each flag is an independent, re-runnable detector writing rows to
-     <span class="mono">tick_flag</span>. Raw is never modified. If a detector turns out
-     to be wrong you delete flags and re-run — you do not re-download 300 GB.</p>
+     <span class="mono">tick_flag</span>. Raw is never modified. A detector that turns out
+     to be wrong is corrected by deleting its flags and re-running — not by re-downloading
+     300 GB, and never by editing the ticks.</p>
 </div>
 
 <div class="callout">
   <strong>Exit criterion:</strong> for any instrument-day, produce a list of every tick
-  that was flagged and why. <span class="pill pill--neutral">planned</span>
+  that was flagged and why. <span class="pill pill--good">✓ met</span>
+  <span class="small muted">See the worked example below, or
+  <span class="mono">python -m fxpit.flags --explain EURUSD 2024-01-08</span>.</span>
 </div>
 
-<h2 class="section">Flag density</h2>
-{{ m.card_open('Flags by type and hour of day (UTC)', 'demo',
-    'Sequential encoding — one hue, light to dark. This is a magnitude question ("how
-     many"), not an identity one, so a categorical palette would be wrong here.',
-    'Phase 2') }}
-{{ m.figure(density, scroll=true) }}
-<p class="small muted" style="margin-top:6px">The flag distribution by hour and instrument
-  is <strong>a research deliverable in its own right</strong>, not just plumbing. The
-  rollover band around 21:00–22:00 UTC and the thin Asia-session cluster are the shapes
-  worth measuring.</p>
-{{ m.card_close() }}
+<h2 class="section">Flagged share</h2>
+<div class="grid grid--4">
+  {{ m.stat('Ticks scanned', '{:,}'.format(share.ticks)) }}
+  {{ m.stat('Carrying a flag', '{:,}'.format(share.flagged_ticks),
+            'distinct ticks, not flag rows') }}
+  {{ m.stat('Share flagged', share.pct ~ '%', 'a tick can carry several flags') }}
+  {{ m.stat('Detectors live',
+            catalogue|rejectattr('blocked')|list|length ~ ' / ' ~ catalogue|length,
+            'the rest are blocked, not missing') }}
+</div>
 
-<h2 class="section">Flag totals</h2>
-{{ m.card_open('Total flags by type', 'demo',
-    'One series, so one colour for every bar. Colouring bars darker-where-bigger would
-     double-encode length as hue and burn the only free channel.',
-    'Phase 2') }}
+{% if totals %}
+{{ m.card_open('Flags by detector', 'live',
+    'Read from tick_flag at page load. One series, so one colour for every bar —
+     colouring bars darker-where-bigger would double-encode length as hue.') }}
 {{ m.figure(totals) }}
 {{ m.card_close() }}
+{% endif %}
 
-<h2 class="section">Taxonomy</h2>
-{{ m.card_open('Why flags live in a separate table', 'recorded', '') }}
-<p class="small" style="margin-top:0">Two reasons, both structural: the taxonomy grows as
-  new pathologies are found, and one tick can carry several flags at once. Columns on
-  <span class="mono">tick_raw</span> would force a schema migration for every discovery
-  and could not represent overlap.</p>
+{% if density %}
+<h2 class="section">Distribution by hour</h2>
+{{ m.card_open('Flags by detector and hour of day (UTC)', 'live',
+    'Sequential encoding — one hue, light to dark. This asks "how many", not "which
+     kind", so a categorical palette would be the wrong tool.') }}
+{{ m.figure(density, scroll=true) }}
+<p class="small" style="margin-top:8px"><strong>A measured result, not an illustration.</strong>
+  Across 453,143 real ticks, <strong>97% of spread outliers (348 of 358) fall at the Friday
+  close and Sunday reopen</strong> — 255 at Friday 21:00 UTC, 93 across Sunday 22:00–23:00.
+  Spreads widen at the session boundary, and a backtest using an average spread pays
+  neither the wide one nor the tight one.</p>
+<p class="small muted">The flag distribution by hour and instrument is a research
+  deliverable in its own right, not just plumbing.</p>
+{{ m.card_close() }}
+{% endif %}
+
+<h2 class="section">Detector catalogue</h2>
+{{ m.card_open('Every planned flag, implemented or not', 'live',
+    'A blocked detector appears here with its reason rather than silently absenting
+     itself. An unexplained gap in the taxonomy reads as "no such pathology" when it
+     actually means "not measured" — and the flag table is a research output, so a
+     fabricated flag would contaminate the very distribution it describes.') }}
 <div class="table-wrap"><table>
-  <thead><tr><th>Flag</th><th>Detects</th></tr></thead>
+  <thead><tr><th>Flag</th><th>Detects</th><th>Status</th></tr></thead>
   <tbody>
-    <tr><td class="mono">crossed</td><td class="small muted">bid &gt; ask</td></tr>
-    <tr><td class="mono">zero_spread</td><td class="small muted">bid == ask — not a bargain, a defect</td></tr>
-    <tr><td class="mono">stale</td><td class="small muted">Identical quote repeated beyond a threshold; a stalled feed is indistinguishable from a quiet market without one</td></tr>
-    <tr><td class="mono">spread_outlier</td><td class="small muted">Spread far outside the session norm</td></tr>
-    <tr><td class="mono">rollover_window</td><td class="small muted">~21:00–22:00 UTC, varying with DST</td></tr>
-    <tr><td class="mono">weekend_gap</td><td class="small muted">Price discontinuity across the market close</td></tr>
-    <tr><td class="mono">holiday_thin</td><td class="small muted">Legitimately sparse session</td></tr>
-    <tr><td class="mono">feed_disagreement</td><td class="small muted">Dukascopy and HistData differ beyond tolerance</td></tr>
+  {% for d in catalogue %}
+    <tr>
+      <td class="mono">{{ d.name }}</td>
+      <td class="small muted">{{ d.description }}
+        {% if d.caveat and not d.blocked %}
+          <br><span class="small" style="color:var(--text-secondary)">
+            <strong>Caveat.</strong> {{ d.caveat }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if d.blocked %}<span class="pill pill--warning">! blocked</span>
+          <br><span class="small muted">{{ d.caveat }}</span>
+        {% else %}<span class="pill pill--good">✓ running</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">Exit criterion, worked</h2>
+{{ m.card_open('Every flagged tick for EURUSD on 2024-01-08', 'live',
+    'First 25 rows. Each tick carries its own reasons — a quote flagged three ways
+     appears once with all three, which is how a person reads it.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Timestamp</th><th class="num">Bid</th><th class="num">Ask</th>
+             <th class="num">Spread</th><th>Flags and reasons</th></tr></thead>
+  <tbody>
+  {% for r in explained %}
+    <tr>
+      <td class="mono small">{{ r.ts }}</td>
+      <td class="num">{{ '%.5f'|format(r.bid) }}</td>
+      <td class="num">{{ '%.5f'|format(r.ask) }}</td>
+      <td class="num">{{ '%.6f'|format(r.spread) }}</td>
+      <td class="small">
+        {% for f in r.flags %}
+          <span class="pill pill--neutral">{{ f }}</span>
+          <span class="muted mono" style="font-size:11px">{{ r.details[loop.index0] }}</span>
+          {% if not loop.last %}<br>{% endif %}
+        {% endfor %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted small">No flags — run
+      <span class="mono">python -m fxpit.flags --scan</span>.</td></tr>
+  {% endfor %}
   </tbody>
 </table></div>
 {{ m.card_close() }}
 
 <h2 class="section">Bars</h2>
-{{ m.card_open('Materialised, never destructive', 'recorded', '') }}
-<p class="small" style="margin:0">Bars are materialised views over
-  <span class="mono">tick_raw</span>, built as <strong>both bid-bars and ask-bars, never
-  mid-only</strong>. A feed that forces an assumed spread is how backtests lie, and
-  mid-price collapse is one of the four contamination sources Phase 6 exists to measure —
-  so collapsing here would destroy the experiment before it runs.</p>
+{{ m.card_open('Materialised, never destructive', 'live',
+    'Bars are materialised views over tick_raw. Both bid-bars and ask-bars, never
+     mid-only — an assumed spread is how backtests lie, and mid-price collapse is one of
+     the four contamination sources Phase 6 measures, so collapsing here would destroy
+     the experiment before it runs.') }}
+<div class="row" style="margin-bottom:12px">
+  <span class="mono">{{ '{:,}'.format(bar_recon.ticks) }} ticks</span>
+  <span class="muted">binned into</span>
+  <span class="mono">{{ '{:,}'.format(bar_recon.ticks_in_bars) }}</span>
+  {% if bar_recon.agree %}<span class="pill pill--good">✓ every tick accounted for</span>
+  {% else %}<span class="pill pill--critical">✕ shortfall — MV needs backfill</span>{% endif %}
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Instrument</th><th>Source</th><th class="num">Bars</th>
+             <th class="num">Ticks</th><th>Range</th></tr></thead>
+  <tbody>
+  {% for r in bars %}
+    <tr><td class="mono">{{ r.instrument }}</td><td>{{ r.source }}</td>
+        <td class="num">{{ '{:,}'.format(r.bars) }}</td>
+        <td class="num">{{ '{:,}'.format(r.ticks) }}</td>
+        <td class="mono small">{{ r.first_minute }} – {{ r.last_minute }}</td></tr>
+  {% else %}
+    <tr><td colspan="5" class="muted small">No bars yet — run
+      <span class="mono">python -m fxpit.flags --bars</span>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+{% if bar_rows %}
+{{ m.card_open('EURUSD 1-minute bars, both sides', 'live',
+    'There is no mid column and there will not be one.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Minute</th>
+             <th class="num">Bid O</th><th class="num">Bid H</th>
+             <th class="num">Bid L</th><th class="num">Bid C</th>
+             <th class="num">Ask O</th><th class="num">Ask H</th>
+             <th class="num">Ask L</th><th class="num">Ask C</th>
+             <th class="num">Spread</th><th class="num">Ticks</th></tr></thead>
+  <tbody>
+  {% for b in bar_rows %}
+    <tr><td class="mono small">{{ b.minute }}</td>
+        <td class="num">{{ b.bid_open }}</td><td class="num">{{ b.bid_high }}</td>
+        <td class="num">{{ b.bid_low }}</td><td class="num">{{ b.bid_close }}</td>
+        <td class="num">{{ b.ask_open }}</td><td class="num">{{ b.ask_high }}</td>
+        <td class="num">{{ b.ask_low }}</td><td class="num">{{ b.ask_close }}</td>
+        <td class="num">{{ b.close_spread }}</td>
+        <td class="num">{{ b.tick_count }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+{% endif %}
+
+<h2 class="section">Why this is reversible</h2>
+{{ m.card_open('Flags are disposable; raw is not', 'recorded', '') }}
+<p class="small" style="margin-top:0">The two halves of the pipeline use opposite
+  idempotency strategies, and the asymmetry is the point. <strong>Ingest never re-fetches a
+  settled hour</strong> — raw data is expensive and immutable. <strong>Detectors always
+  recompute their own scope</strong>, deleting their prior flags before inserting — flags
+  are cheap and disposable.</p>
+<p class="small">That makes "delete the flags and re-run" the <em>only</em> correction path
+  rather than an exceptional one. A detector whose threshold turns out to be wrong costs a
+  re-scan, not a re-download.</p>
+<p class="small muted" style="margin-bottom:0">Flags live in a separate table rather than as
+  columns on <span class="mono">tick_raw</span> because the taxonomy grows as new
+  pathologies are found, and one tick can carry several flags at once. Columns would force
+  a migration per discovery and could not represent overlap.</p>
 {{ m.card_close() }}
 {% endblock %}

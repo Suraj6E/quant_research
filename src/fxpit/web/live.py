@@ -313,6 +313,169 @@ def ingest_reconciliation() -> dict:
     }
 
 
+# --------------------------------------------------------------------------
+# Phase 2 — real flag and bar state.
+# --------------------------------------------------------------------------
+
+
+def _with_ch(fn, default):
+    try:
+        from fxpit.ingest import store
+
+        client = store.connect()
+        try:
+            return fn(client)
+        finally:
+            client.close()
+    except Exception:
+        return default
+
+
+def flag_totals() -> list[dict]:
+    from fxpit.flags import report
+
+    return _with_ch(report.flag_totals, [])
+
+
+def flag_hours() -> list[dict]:
+    from fxpit.flags import report
+
+    return _with_ch(report.flags_by_hour, [])
+
+
+def flagged_share() -> dict:
+    from fxpit.flags import report
+
+    return _with_ch(report.flagged_share, {"ticks": 0, "flagged_ticks": 0, "pct": 0.0})
+
+
+def bar_coverage() -> list[dict]:
+    from fxpit.flags import report
+
+    return _with_ch(report.bar_coverage, [])
+
+
+def bar_sample(instrument: str = "EURUSD", limit: int = 8) -> list[dict]:
+    from fxpit.flags import report
+
+    return _with_ch(lambda c: report.bar_sample(c, instrument, limit), [])
+
+
+def bars_reconcile() -> dict:
+    from fxpit.flags import report
+
+    return _with_ch(report.bars_reconcile, {"ticks": 0, "ticks_in_bars": 0, "agree": True})
+
+
+def detector_catalogue() -> list[dict]:
+    """Every planned flag, implemented or not. A blocked detector appears here
+    with its reason rather than silently absenting itself — an unexplained gap
+    in the taxonomy reads as "no such pathology" instead of "not measured".
+    """
+    from fxpit.flags import detectors as det
+
+    return [
+        {
+            "name": d.name,
+            "description": d.description,
+            "blocked": d.blocked,
+            "caveat": d.caveat,
+        }
+        for d in det.ALL
+    ]
+
+
+def explain_day(instrument: str, day_iso: str, limit: int = 40) -> list[dict]:
+    from datetime import date as _date
+
+    from fxpit.flags import report
+
+    try:
+        day = _date.fromisoformat(day_iso)
+    except ValueError:
+        return []
+    return _with_ch(lambda c: report.explain_day(c, instrument, day)[:limit], [])
+
+
+# --------------------------------------------------------------------------
+# Phase 3 — real bitemporal macro state.
+# --------------------------------------------------------------------------
+
+
+def macro_summary() -> list[dict]:
+    try:
+        from fxpit.macro import loader
+
+        conn = loader.connect()
+        try:
+            return loader.summary(conn)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def macro_revisions(limit: int = 10) -> list[dict]:
+    try:
+        from fxpit.macro import loader
+
+        conn = loader.connect()
+        try:
+            return loader.revision_examples(conn, limit)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def rebased_series() -> dict[str, str]:
+    from fxpit.macro import loader
+
+    return dict(loader.REBASED)
+
+
+def as_of_walkthrough(series_id: str = "EMPLOY", ref_iso: str = "2009-12-01") -> list[dict]:
+    """The mechanism, run live: one reference period asked at several instants.
+
+    December 2009 is chosen because it is the crisis trough and its first
+    revision removed 1.36 million jobs — the gap between what a trader acted on
+    and what history records is unusually large and unusually consequential.
+    """
+    from datetime import UTC as _UTC
+    from datetime import date as _date
+    from datetime import datetime as _dt
+
+    try:
+        from fxpit.query import macro_as_of, open_production_session
+
+        ref = _date.fromisoformat(ref_iso)
+        session = open_production_session(series=[series_id])
+        try:
+            asks = [
+                ("2010-01-15", "before any vintage existed", _dt(2010, 1, 15, tzinfo=_UTC)),
+                ("2010-02-15", "first print published", _dt(2010, 2, 15, tzinfo=_UTC)),
+                ("2010-03-15", "after the first revision", _dt(2010, 3, 15, tzinfo=_UTC)),
+                ("2011-06-15", "a year and a half later", _dt(2011, 6, 15, tzinfo=_UTC)),
+                ("2026-08-05", "today", _dt(2026, 8, 5, tzinfo=_UTC)),
+            ]
+            out = []
+            for label, note, t in asks:
+                facts = macro_as_of(t, series_id, ref, session=session)
+                f = facts[0] if facts else None
+                out.append({
+                    "asked_at": label,
+                    "note": note,
+                    "value": f.value if f else None,
+                    "vintage_seq": f.vintage_seq if f else None,
+                    "precision": f.known_at_precision if f else "",
+                })
+            return out
+        finally:
+            session.close()
+    except Exception:
+        return []
+
+
 def revised_period_count() -> int:
     """How many (series, ref_period) pairs actually got revised in the fixture."""
     by_key: dict[tuple[str, date], list] = {}

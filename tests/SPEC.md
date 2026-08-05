@@ -1,13 +1,15 @@
 # Phase 0 — Acceptance test specification
 
-**Status: RED, by design.** 17 failing, 11 passing.
+**Status: GREEN as of Phase 3.** 28 acceptance tests passing (70 across the whole suite).
 
-Every failure is `NotImplementedError` from `fxpit.query.as_of` — the guarantee
-is not yet provided because Phase 3 has not been written. The 11 passing tests
-validate the *fixture* itself, not the system: they prove the test data still
-contains the pathologies the detectors are supposed to find. If someone
-"tidies up" a fixture, those tests go red and the suite tells you it has lost
-its power.
+This document was written in Phase 0 when the suite was red by design and every
+failure was a `NotImplementedError` from an unimplemented `as_of()`. Phase 3
+implemented it. The assertions below are unchanged — only the backing store was
+added — so a failure here now means a real regression, not an expected state.
+
+The fixture-validation tests prove the test data still contains the pathologies
+the detectors are supposed to find. If someone "tidies up" a fixture, those go red
+and the suite tells you it has lost its power.
 
 The exit criterion for Phase 0 is that each test's failure mode is explainable
 in one sentence. That is what this document is.

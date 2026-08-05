@@ -36,20 +36,20 @@ PHASES = [
         "done",
         "Each test's failure mode explainable in one sentence",
     ),
-    (1, "Tick ingest", "2-3 weeks", "next", "A re-run produces zero new rows and zero errors"),
+    (1, "Tick ingest", "2-3 weeks", "done", "A re-run produces zero new rows and zero errors"),
     (
         2,
         "Cleaning layer",
         "2 weeks",
-        "planned",
+        "done",
         "For any instrument-day, list every flagged tick and why",
     ),
-    (3, "Bitemporal macro", "2 weeks", "planned", "No-clairvoyance and revision tests green"),
+    (3, "Bitemporal macro", "2 weeks", "done", "No-clairvoyance and revision tests green"),
     (
         4,
         "Session & calendar",
         "1-2 weeks",
-        "planned",
+        "next",
         "For any timestamp: which session, rollover?, holiday?",
     ),
     (
@@ -201,20 +201,55 @@ def phase1(request: Request):
 
 @app.get("/phase/2", response_class=HTMLResponse)
 def phase2(request: Request):
-    flags, hours, matrix = demo.flag_density()
-    density = heatmap(flags, hours, matrix, caption="Flag counts by type and hour of day (UTC)")
-    totals = bar_chart(
-        flags, [sum(r) for r in matrix], places=0, highlight=4, caption="Total flags by type"
-    )
+    """Phase 2 reads real flags from tick_flag. The flag_density generator this
+    route used to call was deleted when the detectors landed.
+    """
+    totals_rows = live.flag_totals()
+    hour_rows = live.flag_hours()
+
+    totals = None
+    if totals_rows:
+        agg: dict[str, int] = {}
+        for r in totals_rows:
+            agg[r["flag"]] = agg.get(r["flag"], 0) + int(r["flags"])
+        names = sorted(agg, key=lambda k: -agg[k])
+        totals = bar_chart(
+            names,
+            [float(agg[n]) for n in names],
+            places=0,
+            caption="Flags written by detector, all instruments",
+        )
+
+    density = None
+    if hour_rows:
+        flags = sorted({r["flag"] for r in hour_rows})
+        hours = [f"{h:02d}" for h in range(24)]
+        lookup = {(r["flag"], int(r["hour_utc"])): int(r["flags"]) for r in hour_rows}
+        matrix = [[float(lookup.get((f, h), 0)) for h in range(24)] for f in flags]
+        density = heatmap(
+            flags, hours, matrix, caption="Flag counts by detector and hour of day (UTC)"
+        )
+
     return templates.TemplateResponse(
         request,
         "phase2.html",
-        ctx(active=2, density=density, totals=totals),
+        ctx(
+            active=2,
+            totals=totals,
+            density=density,
+            share=live.flagged_share(),
+            catalogue=live.detector_catalogue(),
+            bars=live.bar_coverage(),
+            bar_rows=live.bar_sample("EURUSD", 8),
+            bar_recon=live.bars_reconcile(),
+            explained=live.explain_day("EURUSD", "2024-01-08", limit=25),
+        ),
     )
 
 
 @app.get("/phase/3", response_class=HTMLResponse)
 def phase3(request: Request):
+    """Phase 3 reads the real RTDSM archive and runs as_of() live."""
     timeline = step_timeline(
         live.RECORDED_PAYEMS_VINTAGES,
         places=0,
@@ -227,8 +262,10 @@ def phase3(request: Request):
         ctx(
             active=3,
             timeline=timeline,
-            vintages=live.RECORDED_PAYEMS_VINTAGES,
-            macro=live.macro_fixture(),
+            summary=live.macro_summary(),
+            revisions=live.macro_revisions(10),
+            rebased=live.rebased_series(),
+            walkthrough=live.as_of_walkthrough(),
         ),
     )
 

@@ -74,6 +74,28 @@ class BarRow:
     source: str
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _point_in_time_session():
+    """Back `as_of()` with the hand-built fixtures for the whole test session.
+
+    Phase 0 wrote these tests against an empty schema, before any storage
+    existed, and their bodies have not been touched since. Phase 3 supplies the
+    backing store they always assumed — it does not adjust the assertions to
+    fit the implementation, which would invert the point of writing them first.
+
+    The SQL exercised here is the same SQL production uses; only the loader
+    differs, so a test passing against fixtures is evidence about the real
+    filter rather than about a test double.
+    """
+    from fxpit.query import session as qs
+
+    s = qs.fixture_session(FIXTURES)
+    qs.set_default_session(s)
+    yield s
+    qs.set_default_session(None)
+    s.close()
+
+
 @pytest.fixture(scope="session")
 def macro_rows() -> list[MacroRow]:
     return [

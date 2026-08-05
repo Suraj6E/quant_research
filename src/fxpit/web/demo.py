@@ -41,28 +41,9 @@ def _rng(salt: str) -> random.Random:
 # next person reaches for when adding a panel.
 
 
-def flag_density() -> tuple[list[str], list[str], list[list[float]]]:
-    """Flag counts by flag type and hour of day (UTC).
-
-    Shaped with a rollover bump around 21:00-22:00 UTC and a thin-session
-    bump in the Asia hours, because those are where real pathologies cluster.
-    """
-    rng = _rng("flags")
-    hours = [f"{h:02d}" for h in range(24)]
-    matrix = []
-    for flag in FLAGS:
-        row = []
-        for h in range(24):
-            base = rng.uniform(20, 90)
-            if flag == "rollover_window":
-                base = rng.uniform(900, 1400) if h in (21, 22) else rng.uniform(0, 12)
-            elif flag in ("stale", "holiday_thin") and h in (0, 1, 2, 3, 23):
-                base *= rng.uniform(3.0, 5.5)
-            elif flag == "spread_outlier" and h in (12, 13, 14):
-                base *= rng.uniform(2.0, 3.2)
-            row.append(round(base))
-        matrix.append(row)
-    return FLAGS, hours, matrix
+# Phase 2's generator (flag_density) was DELETED on 2026-08-05 when the real
+# detectors landed. The flag panels now read tick_flag via fxpit.web.live.
+# Deleting rather than commenting out is deliberate — see the Phase 1 note.
 
 
 def spread_by_hour() -> tuple[list[str], list[tuple[str, list[float]]]]:

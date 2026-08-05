@@ -401,6 +401,49 @@ Raw is never modified. Cleaning is additive and reversible. If a detector turns 
 
 ---
 
+**COMPLETE 2026-08-05.** Implemented in `src/fxpit/flags/`. Exit criterion is executable:
+`python -m fxpit.flags --explain EURUSD 2024-01-08` lists every flagged tick with its
+reasons.
+
+**Idempotency is the mirror image of Phase 1's, deliberately.** Ingest never re-fetches a
+settled hour because raw data is expensive and immutable. Detectors always recompute their
+own scope, deleting their prior flags before inserting, because flags are cheap and
+disposable. That makes "delete the flags and re-run" the *only* correction path rather than
+an exceptional one.
+
+**Six of eight detectors are running; three are blocked and say so.** `weekend_gap` and
+`holiday_thin` need the Phase 4 session and holiday calendars; `feed_disagreement` needs
+HistData ingested as a second feed. `session_gap` is the honest measurable subset of
+`weekend_gap` — it reports silence without claiming to know its cause. Shipping a guessed
+`holiday_thin` would be worse than not shipping it, since the flag distribution is itself a
+deliverable and a fabricated flag contaminates it.
+
+**First measured results over 453,143 real ticks** (EURUSD/GBPUSD/USDJPY, 2024-01-05 to
+2024-01-09):
+
+| Detector | Flags | Note |
+|---|---|---|
+| `crossed` | 0 | No inverted quotes in this sample |
+| `zero_spread` | 0 | |
+| `stale` | 106 | Runs of ≥4 identical quotes |
+| `spread_outlier` | 358 | >5× the hour's median spread |
+| `rollover_window` | 8,755 | Time-window marker, not a defect |
+| `session_gap` | 1 | The weekend — EURUSD is the only pair spanning it |
+
+**1.98% of ticks carry at least one flag.** The most interesting result is the
+concentration: **97% of spread outliers (348 of 358) fall at the Friday close and Sunday
+reopen** — 255 at Friday 21:00 UTC and 93 across Sunday 22:00–23:00. Session-boundary
+spread widening is textbook microstructure, but this is it measured rather than assumed,
+and it is directly relevant to hypothesis H2: a strategy backtested on an average spread
+pays neither the wide one nor the tight one.
+
+**Gotcha found:** a ClickHouse materialised view only sees rows inserted *after* it is
+created — it does not backfill. Every tick from Phase 1 was invisible to `bar_1m_mv` until
+replayed with an explicit `INSERT ... SELECT`. The view raises no error while covering only
+the future, so `bars_reconcile()` checks that bars account for every tick.
+
+---
+
 ### Phase 3 — Bitemporal macro store (2 weeks)
 
 **Tasks**
@@ -413,6 +456,59 @@ Raw is never modified. Cleaning is additive and reversible. If a detector turns 
 **Deliverable:** working `as_of()` with Phase 0 revision tests passing.
 
 **Exit criterion:** the no-clairvoyance and revision tests are green.
+
+---
+
+**COMPLETE 2026-08-05.** Implemented in `src/fxpit/query/` and `src/fxpit/macro/`.
+**All four acceptance families now pass, not just the two required — 70 tests, 0 failures.**
+The suite has been red since Phase 0 by design; this is the phase that turns it green.
+
+**586,494 real vintage observations loaded** from RTDSM: EMPLOY 442,176 (1,050 periods ×
+740 vintages, back to 1964), CPI 96,913, ROUTPUT 47,405.
+
+**`as_of()` has exactly one implementation of the filter.** Macro from Postgres and
+ticks/bars from ClickHouse both materialise into DuckDB relations with fixed shapes, and
+every `as_of` function is SQL over those relations. Where rows come from changes the
+loader, never the filter — the guarantee is worth nothing if there are two copies of it
+that can drift.
+
+**The tests were not adjusted to fit the implementation.** Phase 0 test bodies are
+untouched; `conftest.py` gained a fixture that supplies the backing store they always
+assumed. A five-mutation check confirms the suite has teeth — dropping the `known_at`
+filter, inverting the vintage ordering, dropping the tick filter, admitting crossed quotes,
+and accepting a bare `date` are each caught by 1–5 tests.
+
+### Timestamp honesty
+
+RTDSM publishes a vintage **month**; ALFRED a vintage **date**; neither a release **time**.
+So **100% of the loaded archive carries `known_at_precision = 'month'`**, recorded
+explicitly rather than assumed away. Coarse timestamps are placed at the **latest** instant
+consistent with what is known, which biases every query toward withholding rather than
+leaking. Under-reporting what was knowable costs signal; over-reporting it is look-ahead
+bias, which is the failure the database exists to prevent.
+
+**Remaining task, not done:** joining BLS/BEA release schedules to upgrade EMPLOY vintages
+from month to date precision. The source exists — `Release_-Dates-Employment_Situation-BLS.xls`
+was found during Phase 0 verification — but it is legacy `.xls` and needs a different
+reader. Phase 6 wants intraday alignment, so this should land before then. ECB/BIS non-USD
+coverage is likewise deferred.
+
+### A trap caught in this phase
+
+The first revision ranking reported 1985Q3 real GNP revised from 1,684.8 to 8,604.2 — a
+6,919-point move. **It is not a revision.** Real GDP is published in chained dollars of a
+base year, the base moved from 1982 to 2017, and a rebasing shifts every historical period
+at once. Narrowing to a 400-day window still showed 113%; a single-vintage step still showed
+113%. No window is tight enough, so ROUTPUT and CPI are now **excluded** from level-based
+revision rankings with the reason stated, rather than quietly included.
+
+This is worth recording because it is the project's own failure mode appearing in its own
+output: a plausible number, no error, nothing to alert you. The only defence was knowing
+what the units meant.
+
+With rebased series excluded, the genuine result is striking: **December 2009 payrolls —
+the crisis trough — had 1,363,000 jobs removed at the first revision** (130,910 → 129,547,
+−1.04%).
 
 ---
 

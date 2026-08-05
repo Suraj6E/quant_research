@@ -4,14 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phases 0 and 1 are complete; Phase 2 is next.**
+**Phases 0–3 are complete; Phase 4 is next.**
 
-The suite splits into two halves that must not be confused:
+**The whole suite is green: 70 passed, 0 failed.** The acceptance suite was red by design from Phase 0 until Phase 3 implemented `as_of()`. It must stay green now — a red acceptance test means a point-in-time guarantee regressed, not that the suite is "still in its expected state". Do not fix one by weakening its assertion.
 
-- **Acceptance suite (Phase 0) — red on purpose.** 17 failing, every one a `NotImplementedError` from the unimplemented `as_of()`. A failure that is *not* a `NotImplementedError` means something real broke. See `tests/SPEC.md`.
-- **Ingest suite (Phase 1) — green.** `tests/test_ingest.py`, unit tests with no network plus integration tests behind `-m integration`. These must stay green.
-
-`src/fxpit/query/as_of.py` defines the read contract with unimplemented bodies; it is implemented in Phase 3.
+Phase 0's test bodies have never been edited. `conftest.py` supplies the backing store they always assumed. Keep it that way.
 
 ## Phase 1 ingest (src/fxpit/ingest/)
 
@@ -28,6 +25,35 @@ python -m fxpit.ingest --verify-idempotent ... # asserts the exit criterion
 - **Decoding is not transformation.** Integer→float via the decimal factor and ms-offset→UTC timestamp are required to have a price at all. Everything else the feed sent — crossed quotes, zero spreads, duplicate stamps, out-of-order rows — is preserved untouched and flagged additively in Phase 2.
 - **Ask precedes bid in the 20-byte wire record** (`>IIIff` = ms, ask, bid, ask_vol, bid_vol). Swapping them yields a uniformly negative spread that reads as a broken feed rather than a decode bug.
 - **Concurrency above 2 workers draws HTTP 503** (measured: 4 workers at 0.15s pause produced 10 throttled hours). Defaults are 2 workers / 0.25s with jittered backoff on 429/503 so retrying workers don't resynchronise.
+
+## Phase 2 cleaning layer (src/fxpit/flags/)
+
+```powershell
+python -m fxpit.flags --bars --instruments EURUSD --start 2024-01-05 --end 2024-01-09
+python -m fxpit.flags --scan --instruments EURUSD --start 2024-01-05 --end 2024-01-09
+python -m fxpit.flags --report
+python -m fxpit.flags --explain EURUSD 2024-01-08   # the exit criterion
+```
+
+- **Idempotency here is the mirror of Phase 1's, on purpose.** Ingest never re-fetches a settled hour (raw is expensive and immutable); detectors always recompute their own scope, deleting their prior flags first (flags are cheap and disposable). Keep it that way — it makes "delete the flags and re-run" the only correction path rather than an exceptional one.
+- **Detectors run as SQL inside ClickHouse**, never by streaming ticks into Python. They may only read `tick_raw`; a detector that read `tick_flag` would make results order-dependent. Tests enforce both.
+- **A blocked detector stays in the catalogue with its reason.** `weekend_gap` and `holiday_thin` need Phase 4; `feed_disagreement` needs HistData. Do not ship a guessed implementation — the flag distribution is a deliverable, so a fabricated flag contaminates the thing it describes. `session_gap` is the honest subset of `weekend_gap`: it reports silence without claiming to know the cause.
+- **A ClickHouse materialised view does not backfill.** It only sees rows inserted after it was created, raises no error, and silently covers only the future. `--bars` replays existing ticks; `bars_reconcile()` checks bars account for every tick.
+- **Bars carry no mid column and must not gain one.** Mid-price collapse is one of the four contamination sources Phase 6 measures.
+
+## Phase 3 query layer + macro (src/fxpit/query/, src/fxpit/macro/)
+
+```powershell
+python -m fxpit.macro --load        # download and load RTDSM vintages
+python -m fxpit.macro --report      # coverage and timestamp precision
+python -m fxpit.macro --revisions   # largest first revisions
+```
+
+- **`as_of()` has exactly one implementation of the `known_at <= t` filter.** Sources materialise into DuckDB relations with fixed shapes; every `as_of` function is SQL over those relations. Adding a second filter path — even a "quick" one for a different backend — destroys the guarantee, because two copies can drift.
+- **`open_production_session()` is scopeable and should be scoped.** `series=[...]` for macro; ticks and bars are always windowed. Loading is bulk-via-Arrow, not `executemany` — the row-by-row path took 339s for the payrolls archive versus 1.9s.
+- **Coarse timestamps are placed at the LATEST consistent instant**, never the earliest or the middle. A month-precision vintage sits at month end so queries withhold rather than leak. Never "improve" this by centring it.
+- **Do not compare rebased series by level across vintages.** `loader.REBASED` lists them (ROUTPUT, CPI); `loader.UNITS_STABLE` lists the ones where a level difference is genuinely new information (EMPLOY). A new series must be classified into one or the other — a test enforces it. Ignoring this produced a 6,919-point "revision" that was purely a 1982→2017 base-year change.
+- **Passing a bare `date` to `as_of()` raises.** `datetime` subclasses `date`, so the isinstance order matters; never relax it.
 
 `planning.md` is the specification. Read it before writing code in this repo; it is the source of truth for schema, phasing, and rationale. `docs/architecture.md` covers how the tiers are wired, `docs/setup.md` covers environment setup, `docs/ui-design.md` covers the dashboard. This file records only the rules that are easy to violate accidentally.
 

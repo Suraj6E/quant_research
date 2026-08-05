@@ -9,6 +9,9 @@ requires-python = ">=3.12"
 # Path A/B/C decision and the three source-access checks are resolved.
 dependencies = [
   "duckdb>=1.1",             # Tier C, in-process query layer
+  "pytz>=2024.1",            # DuckDB needs it to handle TIMESTAMPTZ, which
+                             # known_at requires and must never be downgraded
+                             # to DATE — see the point-in-time invariants
   "psycopg[binary]>=3.2",    # Tier A client
   "clickhouse-connect>=0.8", # Tier B client
   "pyarrow>=17",             # Parquet interchange between tiers

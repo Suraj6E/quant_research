@@ -5,90 +5,167 @@
 {% block content %}
 <div class="page-head">
   <h1>Phase 3 — Bitemporal macro store</h1>
-  <p>Ingest vintages into <span class="mono">macro_observation</span>, reconstruct release
-     timestamps, and implement <span class="mono">as_of(t)</span> in the DuckDB layer.
-     This is the phase that turns the red suite green.</p>
+  <p>Ingest RTDSM vintages into <span class="mono">macro_observation</span>, place their
+     timestamps honestly, and implement <span class="mono">as_of(t)</span> in the DuckDB
+     layer. This is the phase that turned the red acceptance suite green.</p>
 </div>
 
 <div class="callout">
   <strong>Exit criterion:</strong> the no-clairvoyance and revision test families are
-  green. <span class="pill pill--neutral">planned</span>
+  green. <span class="pill pill--good">✓ met</span>
+  <span class="small muted">All four families pass, not just the two required — 70 tests,
+  0 failures.</span>
 </div>
 
-<h2 class="section">The mechanism</h2>
-{{ m.card_open('Two columns, always both', 'recorded', '') }}
-<div class="grid grid--2">
-  <div>
-    <p class="small" style="margin-top:0"><span class="mono"><strong>ref_period</strong></span>
-      — the period the value describes.<br>
-      <span class="mono"><strong>known_at</strong></span> — the moment it became public.</p>
-    <p class="small">A point-in-time read filters <span class="mono">known_at &lt;= t</span>
-      and keeps the latest <span class="mono">known_at</span> per key. You get what the
-      world believed at <span class="mono">t</span>, not what turned out to be true later.
-      Revisions fall out automatically.</p>
-    <p class="small muted">That is the entire mechanism. Everything else is plumbing.</p>
-  </div>
-  <div>
-    <p class="small" style="margin-top:0"><strong>Why <span class="mono">TIMESTAMPTZ</span>,
-      never <span class="mono">DATE</span>.</strong> An 08:30 ET release and an 08:31 ET
-      price are different objects. A date-only column silently collapses them, and a
-      strategy holding minutes would be entering on news it could not have heard.</p>
-    <p class="small muted">A table with only <span class="mono">ref_period</span> is not
-      point-in-time and cannot be made so retroactively — the information was never
-      recorded.</p>
-  </div>
+<h2 class="section">The mechanism, run live</h2>
+{{ m.card_open('EMPLOY, reference period December 2009, asked at five instants', 'live',
+    'Each row is a real as_of() call against the loaded RTDSM archive at page load. Same
+     query, same reference period, different answers — all of them honest.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Asked at</th><th></th><th class="num">Answer</th>
+             <th class="num">Vintage</th><th>Timestamp precision</th></tr></thead>
+  <tbody>
+  {% for r in walkthrough %}
+    <tr>
+      <td class="mono small">{{ r.asked_at }}</td>
+      <td class="small muted">{{ r.note }}</td>
+      <td class="num">{% if r.value is none %}<span class="muted">nothing known yet</span>
+                      {% else %}{{ '{:,.0f}'.format(r.value) }}{% endif %}</td>
+      <td class="num">{{ r.vintage_seq if r.vintage_seq else '—' }}</td>
+      <td class="small muted">{{ r.precision }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted small">No macro data — run
+      <span class="mono">python -m fxpit.macro --load</span>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small" style="margin-top:10px">December 2009 is the crisis trough. The first
+  print said 130,910 thousand jobs; the first revision removed <strong>1,363,000 of
+  them</strong>. A backtest that queries today's value to trade February 2010 is acting on
+  a number that did not exist for another month — and on a labour market a million jobs
+  healthier than the one anyone could see.</p>
+{{ m.card_close() }}
+
+<h2 class="section">What is loaded</h2>
+{{ m.card_open('RTDSM vintage archive', 'live',
+    'Downloaded from the Philadelphia Fed and loaded into Postgres. Read at page load.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Series</th><th class="num">Observations</th><th class="num">Ref periods</th>
+             <th class="num">Vintages</th><th class="num">Exact ts</th>
+             <th class="num">Month ts</th><th>Range</th></tr></thead>
+  <tbody>
+  {% for r in summary %}
+    <tr><td class="mono">{{ r.series_id }}</td>
+        <td class="num">{{ '{:,}'.format(r.observations) }}</td>
+        <td class="num">{{ '{:,}'.format(r.ref_periods) }}</td>
+        <td class="num">{{ '{:,}'.format(r.vintages) }}</td>
+        <td class="num">{{ '{:,}'.format(r.exact_ts) }}</td>
+        <td class="num">{{ '{:,}'.format(r.month_ts) }}</td>
+        <td class="mono small">{{ r.first_period }} – {{ r.last_period }}</td></tr>
+  {% else %}
+    <tr><td colspan="7" class="muted small">Nothing loaded.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">Honest timestamps</h2>
+{{ m.card_open('Every observation carries a precision', 'recorded',
+    'planning.md: "Where the exact time is unknown, record it explicitly as unknown rather
+     than assuming."') }}
+<p class="small" style="margin-top:0">RTDSM publishes a vintage <strong>month</strong>.
+  ALFRED publishes a vintage <strong>date</strong>. Neither publishes a release
+  <strong>time</strong>. Only the agency schedules give 08:30 ET, and only for the releases
+  they cover — so <strong>100% of the loaded archive carries month precision</strong>, and
+  says so.</p>
+<div class="callout callout--warn">
+  <strong>Coarse timestamps are placed at the LATEST instant consistent with what is
+  known</strong> — a month-precision vintage sits at the last moment of its month. That
+  biases every query toward <em>withholding</em> rather than leaking. A value whose release
+  time is unknown is treated as not-yet-public for longer than it may truly have been,
+  never for less.
 </div>
+<p class="small" style="margin-top:12px">The direction of the error is the whole point.
+  Under-reporting what was knowable is a conservative research error that costs you signal.
+  Over-reporting it is look-ahead bias, which is the failure this database exists to
+  prevent. Assuming 08:30 ET everywhere would manufacture precision that was never
+  measured — the same error as using a revised value, wearing different clothes.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Revisions</h2>
+{{ m.card_open('Largest first revisions — first print vs its very next vintage', 'live',
+    'Computed from the loaded archive at page load. These are the numbers a backtest
+     silently substitutes when it queries a revised series instead of a point-in-time
+     one.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Series</th><th>Ref period</th><th class="num">First print</th>
+             <th class="num">Next vintage</th><th class="num">Revision</th>
+             <th class="num">%</th></tr></thead>
+  <tbody>
+  {% for r in revisions %}
+    <tr><td class="mono">{{ r.series_id }}</td>
+        <td class="mono small">{{ r.ref_period }}</td>
+        <td class="num">{{ '{:,.0f}'.format(r.first_value) }}</td>
+        <td class="num">{{ '{:,.0f}'.format(r.later_value) }}</td>
+        <td class="num">{{ '{:,.0f}'.format(r.revision) }}</td>
+        <td class="num">{{ r.pct }}</td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted small">Nothing loaded.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+{{ m.card_open('Two series are excluded from that ranking, deliberately', 'recorded',
+    'A trap caught during this phase, and worth recording because the wrong answer looked
+     entirely plausible.') }}
+<div class="table-wrap"><table>
+  <tbody>
+  {% for sid, why in rebased.items() %}
+    <tr><td class="mono" style="width:18%">{{ sid }}</td>
+        <td class="small muted">{{ why }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small" style="margin-top:12px">The first version of this ranking reported that
+  1985Q3 real GNP was revised from <span class="mono">1,684.8</span> to
+  <span class="mono">8,604.2</span> — a 6,919-point revision. It is not a revision at all.
+  Real GDP is published in chained dollars of a base year, the base year moved from 1982 to
+  2017, and a rebasing shifts every historical period at once. That is a
+  <strong>units change, not new information</strong>.</p>
+<p class="small">Narrowing the comparison window did not fix it: at 400 days the same
+  period still showed 113%, because base-year changes fall inside a year of the first
+  print. Nor did a single-vintage step. There is no window tight enough, so the series are
+  excluded rather than quietly included, and comparing them properly needs rebasing
+  detection that is not implemented.</p>
+<p class="small muted" style="margin-bottom:0">Recorded prominently because it is the
+  project's own failure mode turning up in its own output: a plausible-looking number,
+  no error, nothing to alert you. The only defence was knowing what the units meant.</p>
 {{ m.card_close() }}
 
 <h2 class="section">A real revision chain</h2>
 {{ m.card_open('US nonfarm payrolls, reference period January 2024', 'recorded',
-    'Pulled from ALFRED on ' ~ captured_at ~ ' and verified by scripts/check_fred_key.py.
-     A step line, not a smooth one: interpolating between revisions would draw a value
-     nobody ever published.') }}
+    'Pulled from ALFRED on ' ~ captured_at ~ '. A step line, not a smooth one:
+     interpolating between revisions would draw values that were never published.') }}
 {{ m.figure(timeline) }}
-<p class="small" style="margin-top:10px">Five vintages, drifting <strong>668k downward over
-  two years</strong>. A backtest using today's value to trade February 2024 is using a
-  number that took two years to settle — and the 157,700 print is what actually moved the
-  market that morning.</p>
 {{ m.card_close() }}
 
-<h2 class="section">The hard part</h2>
-{{ m.card_open('Release timestamps have to be reconstructed', 'recorded', '') }}
-<p class="small" style="margin-top:0">RTDSM gives vintage <em>dates</em>, not release
-  <em>times</em>. ALFRED's real-time axis is date-granularity too — it says a value became
-  known on 2024-02-02, not at 08:30:00 ET. Neither source solves timing.</p>
-<p class="small">Times come from BLS/BEA schedules, which are largely stable (08:30 ET for
-  most US releases) but have changed historically. The Phase 0 source check turned up
-  <span class="mono">Release_-Dates-Employment_Situation-BLS.xls</span> on the Philadelphia
-  Fed site, which covers a good part of this — note it is legacy <span class="mono">.xls</span>,
-  needing a different reader than the <span class="mono">.xlsx</span> vintage files.</p>
-<div class="callout callout--warn" style="margin-top:12px">
-  <strong>Unknown means unknown.</strong> Where a release time cannot be sourced, record it
-  as explicitly unknown. Assuming 08:30 ET would manufacture precision that was never
-  measured — which is the same error as using a revised value, wearing different clothes.
-</div>
-{{ m.card_close() }}
-
-<h2 class="section">Vintage fixture</h2>
-{{ m.card_open('tests/fixtures/macro_vintages.csv', 'live',
-    'Read from disk at page load. This is what the revision test family runs against.') }}
-<div class="table-wrap"><table>
-  <thead><tr><th>Series</th><th>Ref period</th><th>Known at</th>
-             <th class="num">Value</th><th class="num">Vintage</th></tr></thead>
-  <tbody>
-  {% for r in macro %}
-    <tr><td class="mono">{{ r.series_id }}</td>
-        <td class="mono small">{{ r.ref_period }}</td>
-        <td class="mono small">{{ r.known_at.strftime('%Y-%m-%d %H:%M %z') }}</td>
-        <td class="num">{% if r.value is none %}<span class="muted">NULL</span>
-                        {% else %}{{ '%.3f'|format(r.value) }}{% endif %}</td>
-        <td class="num">{{ r.vintage_seq }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table></div>
-<p class="small muted" style="margin-top:10px">The <span class="mono">NULL</span> row is
-  deliberate: a release published as missing is a fact with a
-  <span class="mono">known_at</span>, not an absence. It must not be skipped in favour of
-  the next numeric value.</p>
+<h2 class="section">The read contract</h2>
+{{ m.card_open('as_of(t) is the only sanctioned read path', 'recorded', '') }}
+<p class="small" style="margin-top:0">Filters <span class="mono">known_at &lt;= t</span> and
+  keeps the row with the greatest <span class="mono">known_at</span> per
+  (series, ref_period). Returns an empty result when nothing was known yet — never a later
+  vintage, never a placeholder, never a zero.</p>
+<p class="small">The value of that guarantee comes entirely from there being
+  <strong>exactly one implementation</strong> of the filter. Postgres-backed macro reads
+  and ClickHouse-backed tick reads therefore materialise into DuckDB relations with fixed
+  shapes, and every <span class="mono">as_of</span> function is SQL over those relations.
+  Where the rows came from changes the loader, never the filter.</p>
+<p class="small muted" style="margin-bottom:0">A NULL value is a real fact, not an absence:
+  a release published as missing has a <span class="mono">known_at</span> and must not be
+  skipped in favour of the next numeric vintage. Passing a bare
+  <span class="mono">date</span> raises rather than coercing to midnight — the cheapest
+  check in the codebase, guarding the most expensive mistake.</p>
 {{ m.card_close() }}
 {% endblock %}
