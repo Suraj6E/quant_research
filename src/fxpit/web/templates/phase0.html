@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 0 — Acceptance tests{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 0 — Acceptance tests</h1>
+  <p>Write the tests before the pipeline. A test written after the pipeline encodes what
+     the pipeline does; a test written before it encodes what the pipeline
+     <em>must</em> do. That distinction matters most for look-ahead bias, because a
+     contaminated pipeline produces no errors — only better-looking results.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> each test's failure mode is explainable in one
+  sentence. <span class="pill pill--good">✓ met</span>
+</div>
+
+<h2 class="section">Live suite</h2>
+{% include "partials/test_results.html" %}
+
+<h2 class="section">The four families</h2>
+<div class="grid grid--2">
+{% for name, file, count, failure in families %}
+  {{ m.card_open(name, 'recorded', '') }}
+  <div class="row" style="margin-bottom:8px">
+    <span class="mono small muted">{{ file }}</span>
+    <span class="spacer"></span>
+    <span class="pill pill--neutral">{{ count }} tests</span>
+  </div>
+  <p class="small" style="margin:0"><strong>Failure mode.</strong> {{ failure }}</p>
+  {{ m.card_close() }}
+{% endfor %}
+</div>
+
+<h2 class="section">Fixture — macro vintages</h2>
+{{ m.card_open('Revision coverage', 'live',
+    'Read from tests/fixtures/macro_vintages.csv. PAYEMS rows are real, pulled from
+     ALFRED and verified by scripts/check_fred_key.py; CPIAUCSL and GDPC1 rows are
+     synthetic edge cases.') }}
+<div class="grid grid--3" style="margin-bottom:14px">
+  <div class="stat">
+    <span class="stat__label">Vintage rows</span>
+    <span class="stat__value">{{ macro|length }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Revised periods</span>
+    <span class="stat__value {% if revised >= 8 %}stat__value--good{% endif %}">{{ revised }}</span>
+    <span class="stat__sub">threshold 8 · production 50</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Series</span>
+    <span class="stat__value">{{ macro|map(attribute='series_id')|unique|list|length }}</span>
+  </div>
+</div>
+<p class="small muted" style="margin:0">A revision suite running on unrevised data proves
+  nothing — an implementation that always returned the latest value would pass it. The
+  threshold exists so the suite fails loudly if someone trims the fixture.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Fixture — tick pathologies</h2>
+{{ m.card_open('EURUSD fixture spreads', 'live',
+    'Clean rows are really decoded from the Dukascopy .bi5 for 2024-01-09 10:00 UTC.
+     Pathological rows are synthetic, each violating exactly one rule so a failing
+     detector names itself.') }}
+{{ m.figure(spread_chart) }}
+<p class="small muted" style="margin-top:6px">The negative bar is the deliberate crossed
+  quote (<span class="mono">bid &gt; ask</span>). It stays in the fixture on purpose:
+  <span class="mono">tick_raw</span> is immutable and cleaning is additive, so detectors
+  must flag it rather than the data being corrected.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Fixture — cross-feed bars</h2>
+{{ m.card_open('Dukascopy vs HistData', 'live',
+    'Synthetic bars modelled on the real 2024-01-09 EURUSD level. Two disagreements
+     exceed the 0.5-pip tolerance, one sits within it, and one bar is missing from
+     HistData entirely.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Timestamp</th><th>Source</th><th class="num">Bid close</th>
+             <th class="num">Ask close</th></tr></thead>
+  <tbody>
+  {% for b in bars %}
+    <tr><td class="mono small">{{ b.ts[11:19] }}</td><td>{{ b.source }}</td>
+        <td class="num">{{ '%.5f'|format(b.bid_close) }}</td>
+        <td class="num">{{ '%.5f'|format(b.ask_close) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small muted" style="margin-top:10px">A bar present in one feed and absent from
+  the other is a <em>coverage gap</em>, not agreement. Treating missing as matching is how
+  gaps become invisible.</p>
+{{ m.card_close() }}
+{% endblock %}

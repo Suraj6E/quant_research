@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}fxpit{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script>
+  // Applied before first paint so a dark-theme reader never sees a light flash.
+  (function () {
+    var t = localStorage.getItem("fxpit-theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand__name">fxpit</span>
+      <span class="brand__tag">v0.0.0</span>
+    </div>
+    <p class="brand__sub">Point-in-time FX research database. Every query answerable
+      as of a historical timestamp.</p>
+
+    <nav class="nav">
+      <a class="nav__item {% if active is none %}nav__item--active{% endif %}" href="/">
+        <span class="nav__num">--</span> Overview
+      </a>
+
+      <div class="nav__label">Phases</div>
+      {% for num, name, weeks, state, _ in phases %}
+      <a class="nav__item {% if active == num %}nav__item--active{% endif %}"
+         href="/phase/{{ num }}">
+        <span class="nav__num">{{ num }}</span>
+        <span>{{ name }}</span>
+        {% if state == 'done' %}<span class="phase-state pill pill--good">✓</span>
+        {% elif state == 'next' %}<span class="phase-state pill pill--warning">next</span>
+        {% endif %}
+      </a>
+      {% endfor %}
+
+      <div class="nav__label">Reference</div>
+      <a class="nav__item" href="/api/docs"><span class="nav__num">{ }</span> API docs</a>
+    </nav>
+
+    <div style="margin-top:26px">
+      <button class="btn" onclick="toggleTheme()" id="themeBtn" style="width:100%">
+        Toggle theme
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<script src="/static/htmx.min.js" defer></script>
+<script>
+  function toggleTheme() {
+    var el = document.documentElement;
+    var cur = el.getAttribute("data-theme");
+    if (!cur) {
+      cur = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    var next = cur === "dark" ? "light" : "dark";
+    el.setAttribute("data-theme", next);
+    localStorage.setItem("fxpit-theme", next);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 1 — Tick ingest{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 1 — Tick ingest</h1>
+  <p>Fetch and decode Dukascopy <span class="mono">.bi5</span> hourly files into
+     <span class="mono">tick_raw</span>. Resumable, idempotent, rate-limited, and never
+     transformed on ingest. Start narrow — 7 majors from 2015 — and extend backward only
+     once the pipeline is boring.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> re-running the ingest produces zero new rows and zero
+  errors. <span class="pill pill--warning">next up</span>
+</div>
+
+<div class="callout callout--warn" style="margin-top:14px">
+  <strong>The decoder is already proven.</strong> The Phase 0 source check decoded 4,508
+  real EURUSD ticks, confirmed the zero-based month indices empirically, and confirmed
+  the per-instrument decimal factor (1e5 for EUR pairs, 1e3 for JPY). The riskiest part
+  of this phase was de-risked before it started.
+</div>
+
+<h2 class="section">Coverage</h2>
+{{ m.card_open('Ingest coverage by instrument and month', 'demo',
+    'Percent of expected hours present. Two holes are baked in — a coverage view whose
+     every cell is green cannot show you what a gap looks like.',
+    'Phase 1') }}
+{{ m.figure(coverage, scroll=true) }}
+{{ m.card_close() }}
+
+<h2 class="section">Ingest ledger</h2>
+{{ m.card_open('What was fetched, and whether it worked', 'demo',
+    'The ledger is what makes coverage gaps visible rather than silent. Without it a
+     partial run looks identical to a complete one.',
+    'Phase 1') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Instrument</th><th class="num">Hours fetched</th>
+             <th class="num">Empty payloads</th><th class="num">Errors</th>
+             <th>Status</th></tr></thead>
+  <tbody>
+  {% for r in ledger %}
+    <tr><td class="mono">{{ r.instrument }}</td>
+        <td class="num">{{ r.hours_fetched }}</td>
+        <td class="num">{{ r.empty_payloads }}</td>
+        <td class="num">{{ r.errors }}</td>
+        <td>{% if r.status == 'clean' %}<span class="pill pill--good">✓ clean</span>
+            {% else %}<span class="pill pill--warning">! {{ r.status }}</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">Ingest gotchas</h2>
+{{ m.card_open('Each produces plausible-looking wrong data, not an error', 'recorded',
+    'Recorded because a loud failure is cheap and a quiet one is not.') }}
+<div class="table-wrap"><table>
+  <tbody>
+    <tr><td style="width:34%"><strong>Zero-based month indices</strong></td>
+        <td class="small muted">Confirmed by measurement: month <span class="mono">00</span>
+          returns January (mean bid 1.09409), month <span class="mono">01</span> February
+          (1.07665). An off-by-one silently returns a different month's prices.</td></tr>
+    <tr><td><strong>Per-instrument decimal factor</strong></td>
+        <td class="small muted">JPY pairs use 1e3, EUR pairs 1e5. Wrong factor gives
+          prices off by two orders of magnitude — obvious — or subtly wrong, which is
+          worse.</td></tr>
+    <tr><td><strong>Weekends return HTTP 200 with 0 bytes</strong></td>
+        <td class="small muted"><strong>Corrected by measurement.</strong> planning.md
+          originally said weekends were <em>absent</em>. They are not — Dukascopy serves an
+          empty file, so HTTP status cannot distinguish closed-market from feed-gap. The
+          ledger must consult the session calendar, which makes <strong>Phase 4 a partial
+          dependency of this phase's coverage report</strong>.</td></tr>
+    <tr><td><strong>Legitimately empty hours</strong></td>
+        <td class="small muted">Thin holiday sessions return valid empty payloads. Not an
+          error, and must not be retried forever.</td></tr>
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+{% endblock %}

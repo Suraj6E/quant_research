@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 2 — Cleaning layer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 2 — Cleaning as a reversible layer</h1>
+  <p>Each flag is an independent, re-runnable detector writing rows to
+     <span class="mono">tick_flag</span>. Raw is never modified. If a detector turns out
+     to be wrong you delete flags and re-run — you do not re-download 300 GB.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> for any instrument-day, produce a list of every tick
+  that was flagged and why. <span class="pill pill--neutral">planned</span>
+</div>
+
+<h2 class="section">Flag density</h2>
+{{ m.card_open('Flags by type and hour of day (UTC)', 'demo',
+    'Sequential encoding — one hue, light to dark. This is a magnitude question ("how
+     many"), not an identity one, so a categorical palette would be wrong here.',
+    'Phase 2') }}
+{{ m.figure(density, scroll=true) }}
+<p class="small muted" style="margin-top:6px">The flag distribution by hour and instrument
+  is <strong>a research deliverable in its own right</strong>, not just plumbing. The
+  rollover band around 21:00–22:00 UTC and the thin Asia-session cluster are the shapes
+  worth measuring.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Flag totals</h2>
+{{ m.card_open('Total flags by type', 'demo',
+    'One series, so one colour for every bar. Colouring bars darker-where-bigger would
+     double-encode length as hue and burn the only free channel.',
+    'Phase 2') }}
+{{ m.figure(totals) }}
+{{ m.card_close() }}
+
+<h2 class="section">Taxonomy</h2>
+{{ m.card_open('Why flags live in a separate table', 'recorded', '') }}
+<p class="small" style="margin-top:0">Two reasons, both structural: the taxonomy grows as
+  new pathologies are found, and one tick can carry several flags at once. Columns on
+  <span class="mono">tick_raw</span> would force a schema migration for every discovery
+  and could not represent overlap.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Flag</th><th>Detects</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">crossed</td><td class="small muted">bid &gt; ask</td></tr>
+    <tr><td class="mono">zero_spread</td><td class="small muted">bid == ask — not a bargain, a defect</td></tr>
+    <tr><td class="mono">stale</td><td class="small muted">Identical quote repeated beyond a threshold; a stalled feed is indistinguishable from a quiet market without one</td></tr>
+    <tr><td class="mono">spread_outlier</td><td class="small muted">Spread far outside the session norm</td></tr>
+    <tr><td class="mono">rollover_window</td><td class="small muted">~21:00–22:00 UTC, varying with DST</td></tr>
+    <tr><td class="mono">weekend_gap</td><td class="small muted">Price discontinuity across the market close</td></tr>
+    <tr><td class="mono">holiday_thin</td><td class="small muted">Legitimately sparse session</td></tr>
+    <tr><td class="mono">feed_disagreement</td><td class="small muted">Dukascopy and HistData differ beyond tolerance</td></tr>
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">Bars</h2>
+{{ m.card_open('Materialised, never destructive', 'recorded', '') }}
+<p class="small" style="margin:0">Bars are materialised views over
+  <span class="mono">tick_raw</span>, built as <strong>both bid-bars and ask-bars, never
+  mid-only</strong>. A feed that forces an assumed spread is how backtests lie, and
+  mid-price collapse is one of the four contamination sources Phase 6 exists to measure —
+  so collapsing here would destroy the experiment before it runs.</p>
+{{ m.card_close() }}
+{% endblock %}

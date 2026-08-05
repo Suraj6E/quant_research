@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 6 — Contamination experiment{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 6 — The contamination experiment</h1>
+  <p>One simple, <strong>pre-registered</strong> macro-reactive rule, evaluated under four
+     data regimes. Pre-registration matters: the rule is written down before the results
+     are seen, so the experiment measures contamination rather than the search for a
+     good-looking answer.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> state the size of each contamination source in basis
+  points or Sharpe units. <span class="pill pill--neutral">planned</span>
+</div>
+
+<div class="callout callout--warn" style="margin-top:14px">
+  <strong>This is the only phase where strategy code is permitted</strong>, and only as a
+  measurement instrument. Scope creep into strategy building is rated high-likelihood in
+  the risk register — the rule here is deliberately dull because an interesting one would
+  invite tuning.
+</div>
+
+<h2 class="section">Result</h2>
+{{ m.card_open('Reported Sharpe by data regime', 'demo',
+    'The experiment has not been run. These numbers are invented to show the shape of the
+     finding — the ordering is hypothesis H1, not a result.',
+    'Phase 6') }}
+{{ m.figure(chart) }}
+<p class="small" style="margin-top:6px">Variant A is emphasised because it is the only
+  honest one; the rest are greyed rather than given their own hues, since the story is one
+  comparison and not four identities.</p>
+{{ m.card_close() }}
+
+<h2 class="section">The four regimes</h2>
+{{ m.card_open('What each variant is allowed to know', 'demo',
+    'Each variant strictly adds an information or cost advantage that was unavailable in
+     reality.',
+    'Phase 6') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Variant</th><th>Macro data</th><th>Timestamp</th><th>Costs</th>
+             <th class="num">Sharpe</th></tr></thead>
+  <tbody>
+  {% for v in variants %}
+    <tr>
+      <td><strong>{{ v.variant }}</strong>
+          {% if v.highlight %}<span class="pill pill--good">✓ honest</span>{% endif %}</td>
+      <td class="small muted">{{ v.macro }}</td>
+      <td class="small muted">{{ v.timestamp }}</td>
+      <td class="small muted">{{ v.costs }}</td>
+      <td class="num">{{ '%.2f'|format(v.sharpe) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small" style="margin-top:12px">The gaps are the deliverable, not the levels.
+  <strong>A→B</strong> prices the revision effect. <strong>B→C</strong> prices timestamp
+  precision. <strong>C→D</strong> prices the mid-price assumption. Each is a distinct
+  source of backtest inflation, and this is the first project artefact that puts a number
+  on any of them.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Pre-registered hypotheses</h2>
+{{ m.card_open('Recorded before results, so confirmation bias is harder later', 'recorded',
+    'These are hypotheses, not predictions. Several may be wrong, and being wrong is a
+     legitimate result to write up.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>ID</th><th>Claim</th><th>Confidence</th></tr></thead>
+  <tbody>
+  {% for h in hypotheses %}
+    <tr><td class="mono">{{ h.id }}</td>
+        <td class="small">{{ h.claim }}</td>
+        <td class="small muted">{{ h.confidence }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small muted" style="margin-top:12px">H2 is a genuine prediction that could fail.
+  If the revision effect dominates the spread effect instead, that is more interesting and
+  should be written up prominently rather than quietly.</p>
+{{ m.card_close() }}
+
+<h2 class="section">What this does not produce</h2>
+{{ m.card_open('A profitable strategy', 'recorded', '') }}
+<p class="small" style="margin:0">Stated plainly so it is not a disappointment later. The
+  output is four Sharpe ratios, a chart, and a written interpretation of how much of a
+  reported result comes from data contamination rather than signal. That is the artefact
+  worth showing someone — not the rule itself.</p>
+{{ m.card_close() }}
+{% endblock %}

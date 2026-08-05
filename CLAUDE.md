@@ -8,7 +8,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `src/fxpit/query/as_of.py` defines the read contract with unimplemented bodies; it is implemented in Phase 3. No ingestion code exists yet.
 
-`planning.md` is the specification. Read it before writing code in this repo; it is the source of truth for schema, phasing, and rationale. `docs/architecture.md` covers how the tiers are wired, `docs/setup.md` covers environment setup. This file records only the rules that are easy to violate accidentally.
+`planning.md` is the specification. Read it before writing code in this repo; it is the source of truth for schema, phasing, and rationale. `docs/architecture.md` covers how the tiers are wired, `docs/setup.md` covers environment setup, `docs/ui-design.md` covers the dashboard. This file records only the rules that are easy to violate accidentally.
+
+## Dashboard rules (docs/ui-design.md)
+
+A FastAPI dashboard in `src/fxpit/web/` covers all seven phases. **Do not migrate it to Django** — the ORM and admin generate direct table access, which contradicts success criterion #1. FastAPI was chosen precisely because it has no ORM, so the UI can only consume `fxpit.query`.
+
+- **Every panel declares provenance** — `live` / `recorded` / `demo`. `Panel` has no default and raises if a DEMO panel does not name the phase replacing it. Demo cards render dashed and hatched so they cannot be mistaken for results at a glance.
+- **When a demo panel becomes real:** add the accessor to `live.py`, flip the provenance, then **delete the generator from `demo.py`**. A leftover generator is what the next person reaches for by mistake.
+- **Every chart returns a `TableView`.** It is a required field, not an option — light-mode aqua sits at 2.74:1 against the surface, which obligates relief under the contrast rule.
+- **Charts are server-rendered SVG, max 3 series.** No CDN, no chart library, no web fonts — the no-external-requests constraint applies to the UI too. Past three series the palette stops clearing the all-pairs CVD floor.
+- Re-run the palette validator if colours change; never eyeball CVD safety.
 
 ## Stack and commands
 
@@ -16,7 +26,9 @@ Python 3.12+ (3.13 tested), venv + pip, pytest, ruff, Docker Compose. Python was
 
 ```powershell
 .\.venv\Scripts\Activate.ps1     # venv already created at .venv
-pip install -e ".[dev]"
+pip install -e ".[dev,web]"
+
+uvicorn fxpit.web.app:app --reload --port 8000   # dashboard; /api/docs for OpenAPI
 
 docker compose up -d             # Postgres + ClickHouse; needs Docker Desktop running
 docker compose down              # stop, keep data

@@ -1,0 +1,42 @@
+{% import "macros.html" as m %}
+<div id="test-results">
+  {{ m.card_open('Acceptance suite', 'live',
+      'Runs pytest in this repository. A red suite is correct for Phase 0.') }}
+  <div class="grid grid--3" style="margin-bottom:6px">
+    <div class="stat">
+      <span class="stat__label">Failing</span>
+      <span class="stat__value">{{ results.failed }}</span>
+      <span class="stat__sub">expected — guarantees not yet implemented</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Passing</span>
+      <span class="stat__value">{{ results.passed }}</span>
+      <span class="stat__sub">fixture-validation tests</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Reds all expected</span>
+      <span class="stat__value {% if results.all_reds_expected %}stat__value--good{% else %}stat__value--critical{% endif %}">
+        {{ 'Yes' if results.all_reds_expected else 'No' }}</span>
+      <span class="stat__sub">{{ results.duration }}</span>
+    </div>
+  </div>
+
+  {% if results.error %}
+    <p class="demo-note">{{ results.error }}</p>
+  {% endif %}
+
+  <button class="btn" hx-get="/api/tests" hx-target="#test-results"
+          hx-swap="outerHTML" hx-indicator="#test-results">Re-run suite</button>
+
+  <details class="table-view">
+    <summary>Failing tests ({{ results.failing_names|length }})</summary>
+    <div class="table-wrap"><table>
+      <tbody>
+      {% for n in results.failing_names %}
+        <tr><td class="mono small">{{ n }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </details>
+  {{ m.card_close() }}
+</div>

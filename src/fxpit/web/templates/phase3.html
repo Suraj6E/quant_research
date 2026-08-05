@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 3 — Bitemporal macro{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 3 — Bitemporal macro store</h1>
+  <p>Ingest vintages into <span class="mono">macro_observation</span>, reconstruct release
+     timestamps, and implement <span class="mono">as_of(t)</span> in the DuckDB layer.
+     This is the phase that turns the red suite green.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> the no-clairvoyance and revision test families are
+  green. <span class="pill pill--neutral">planned</span>
+</div>
+
+<h2 class="section">The mechanism</h2>
+{{ m.card_open('Two columns, always both', 'recorded', '') }}
+<div class="grid grid--2">
+  <div>
+    <p class="small" style="margin-top:0"><span class="mono"><strong>ref_period</strong></span>
+      — the period the value describes.<br>
+      <span class="mono"><strong>known_at</strong></span> — the moment it became public.</p>
+    <p class="small">A point-in-time read filters <span class="mono">known_at &lt;= t</span>
+      and keeps the latest <span class="mono">known_at</span> per key. You get what the
+      world believed at <span class="mono">t</span>, not what turned out to be true later.
+      Revisions fall out automatically.</p>
+    <p class="small muted">That is the entire mechanism. Everything else is plumbing.</p>
+  </div>
+  <div>
+    <p class="small" style="margin-top:0"><strong>Why <span class="mono">TIMESTAMPTZ</span>,
+      never <span class="mono">DATE</span>.</strong> An 08:30 ET release and an 08:31 ET
+      price are different objects. A date-only column silently collapses them, and a
+      strategy holding minutes would be entering on news it could not have heard.</p>
+    <p class="small muted">A table with only <span class="mono">ref_period</span> is not
+      point-in-time and cannot be made so retroactively — the information was never
+      recorded.</p>
+  </div>
+</div>
+{{ m.card_close() }}
+
+<h2 class="section">A real revision chain</h2>
+{{ m.card_open('US nonfarm payrolls, reference period January 2024', 'recorded',
+    'Pulled from ALFRED on ' ~ captured_at ~ ' and verified by scripts/check_fred_key.py.
+     A step line, not a smooth one: interpolating between revisions would draw a value
+     nobody ever published.') }}
+{{ m.figure(timeline) }}
+<p class="small" style="margin-top:10px">Five vintages, drifting <strong>668k downward over
+  two years</strong>. A backtest using today's value to trade February 2024 is using a
+  number that took two years to settle — and the 157,700 print is what actually moved the
+  market that morning.</p>
+{{ m.card_close() }}
+
+<h2 class="section">The hard part</h2>
+{{ m.card_open('Release timestamps have to be reconstructed', 'recorded', '') }}
+<p class="small" style="margin-top:0">RTDSM gives vintage <em>dates</em>, not release
+  <em>times</em>. ALFRED's real-time axis is date-granularity too — it says a value became
+  known on 2024-02-02, not at 08:30:00 ET. Neither source solves timing.</p>
+<p class="small">Times come from BLS/BEA schedules, which are largely stable (08:30 ET for
+  most US releases) but have changed historically. The Phase 0 source check turned up
+  <span class="mono">Release_-Dates-Employment_Situation-BLS.xls</span> on the Philadelphia
+  Fed site, which covers a good part of this — note it is legacy <span class="mono">.xls</span>,
+  needing a different reader than the <span class="mono">.xlsx</span> vintage files.</p>
+<div class="callout callout--warn" style="margin-top:12px">
+  <strong>Unknown means unknown.</strong> Where a release time cannot be sourced, record it
+  as explicitly unknown. Assuming 08:30 ET would manufacture precision that was never
+  measured — which is the same error as using a revised value, wearing different clothes.
+</div>
+{{ m.card_close() }}
+
+<h2 class="section">Vintage fixture</h2>
+{{ m.card_open('tests/fixtures/macro_vintages.csv', 'live',
+    'Read from disk at page load. This is what the revision test family runs against.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Series</th><th>Ref period</th><th>Known at</th>
+             <th class="num">Value</th><th class="num">Vintage</th></tr></thead>
+  <tbody>
+  {% for r in macro %}
+    <tr><td class="mono">{{ r.series_id }}</td>
+        <td class="mono small">{{ r.ref_period }}</td>
+        <td class="mono small">{{ r.known_at.strftime('%Y-%m-%d %H:%M %z') }}</td>
+        <td class="num">{% if r.value is none %}<span class="muted">NULL</span>
+                        {% else %}{{ '%.3f'|format(r.value) }}{% endif %}</td>
+        <td class="num">{{ r.vintage_seq }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small muted" style="margin-top:10px">The <span class="mono">NULL</span> row is
+  deliberate: a release published as missing is a fact with a
+  <span class="mono">known_at</span>, not an absence. It must not be skipped in favour of
+  the next numeric value.</p>
+{{ m.card_close() }}
+{% endblock %}

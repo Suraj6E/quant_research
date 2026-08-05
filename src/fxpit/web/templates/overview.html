@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}fxpit — Overview{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Point-in-Time FX Research Database</h1>
+  <p>A research database where every query can be answered <em>as of</em> a historical
+     timestamp, returning only information that was actually available at that moment.
+     The database is not the point — being able to detect and quantify look-ahead bias is.</p>
+</div>
+
+<div class="callout">
+  <strong>Reading this dashboard.</strong> Every panel declares where its numbers came
+  from. <span class="prov prov--live"><span class="prov__dot"></span>Live</span> is measured
+  from the repository right now.
+  <span class="prov prov--recorded"><span class="prov__dot"></span>Recorded</span> is a real
+  measurement captured on {{ captured_at }}.
+  <span class="prov prov--demo"><span class="prov__dot"></span>Demo data</span> is synthetic and
+  describes nothing — those cards are hatched and dashed so they cannot be mistaken for
+  results. Phase 0 is built; phases 1–6 are demo.
+</div>
+
+<h2 class="section">Suite status</h2>
+<div class="grid grid--4">
+  {{ m.stat('Acceptance suite', results.failed ~ ' red',
+            results.passed ~ ' passing · ' ~ results.duration,
+            'good' if results.ok else 'critical') }}
+  {{ m.stat('Reds as expected', 'Yes' if results.all_reds_expected else 'NO',
+            'All failures are NotImplementedError' if results.all_reds_expected
+            else 'A non-NotImplementedError failure appeared',
+            'good' if results.all_reds_expected else 'critical') }}
+  {{ m.stat('Phases complete', '1 / 7', 'Phase 0 done, Phase 1 next') }}
+  {{ m.stat('Blocking decisions', '0', 'All four §12 blockers cleared', 'good') }}
+</div>
+
+<p class="small muted" style="margin-top:10px">A red suite is the intended state for
+  Phase 0 — the tests describe guarantees the pipeline does not yet provide. What must
+  never happen is a failure that is <em>not</em> a <span class="mono">NotImplementedError</span>,
+  which would mean something real broke.</p>
+
+<h2 class="section">Storage tiers</h2>
+{{ m.card_open('Container health', 'live',
+    'Read from docker compose at page load. ClickHouse runs single-node only — a
+     deliberate scope limit, not a TODO.') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Service</th><th>State</th><th>Health</th><th>Holds</th></tr></thead>
+  <tbody>
+  {% for c in containers %}
+    <tr>
+      <td class="mono">{{ c.service }}</td>
+      <td>{{ c.state }}</td>
+      <td>
+        {% if c.health == 'healthy' %}<span class="pill pill--good">✓ healthy</span>
+        {% elif c.health in ('daemon not running', '-') %}<span class="pill pill--neutral">— {{ c.health }}</span>
+        {% else %}<span class="pill pill--warning">! {{ c.health }}</span>{% endif %}
+      </td>
+      <td class="small muted">
+        {% if c.service == 'postgres' %}Tier A — reference &amp; macro vintages
+        {% elif c.service == 'clickhouse' %}Tier B — ticks &amp; bars
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">Source verification</h2>
+{{ m.card_open('The four blocking checks', 'recorded',
+    'Measured ' ~ captured_at ~ '. planning.md §12 blocked all ingestion code until
+     these resolved.') }}
+<div class="stack">
+{% for c in checks %}
+  <div style="border-bottom:1px solid var(--border);padding-bottom:12px">
+    <div class="row">
+      <strong>{{ c.source }}</strong>
+      {% if c.verdict == 'pass' %}<span class="pill pill--good">✓ verified</span>
+      {% else %}<span class="pill pill--critical">✕ failed</span>{% endif %}
+    </div>
+    <p class="small muted" style="margin:6px 0 4px">{{ c.detail }}</p>
+    <p class="small" style="margin:0"><strong>Gotcha.</strong> {{ c.gotcha }}</p>
+  </div>
+{% endfor %}
+</div>
+{{ m.card_close() }}
+
+<h2 class="section">Invariants</h2>
+{{ m.card_open('Rules that define the project', 'recorded',
+    'Code breaking one of these is wrong even if its tests pass.') }}
+<div class="table-wrap"><table>
+  <tbody>
+  {% for name, why in invariants %}
+    <tr><td style="width:38%"><strong>{{ name }}</strong></td>
+        <td class="small muted">{{ why }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">Known limitations</h2>
+{{ m.card_open('Structural, not fixable', 'recorded',
+    'These cannot be engineered away under the free / no-registration constraint.
+     Stating them explicitly is success criterion #5 — they are a deliverable, not a
+     disclaimer.') }}
+<div class="table-wrap"><table>
+  <tbody>
+  {% for name, why in limitations %}
+    <tr><td style="width:32%"><strong>{{ name }}</strong></td>
+        <td class="small muted">{{ why }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 5 — Validation harness{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 5 — Validation harness</h1>
+  <p>Wire the acceptance suite into CI against the real database, monitor spread
+     distributions and tick rates, and publish the cross-feed reconciliation report with a
+     tracked disagreement rate.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> a green, scheduled suite plus a reconciliation report.
+  <span class="pill pill--neutral">planned</span>
+</div>
+
+<h2 class="section">Spread by session</h2>
+{{ m.card_open('Median spread by hour of day (UTC)', 'demo',
+    'Three pairs on one axis. Never two y-scales — the alignment of two scales is
+     arbitrary and invents a correlation that is not in the data.',
+    'Phase 5') }}
+{{ m.figure(spread, series_names=series_names) }}
+<p class="small muted" style="margin-top:6px">The rollover spike around 21:00–22:00 UTC and
+  the thin-Asia widening are the two shapes this panel exists to make visible. A strategy
+  backtested on average spread pays neither.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Cross-feed reconciliation</h2>
+{{ m.card_open('Dukascopy vs HistData disagreement rate', 'demo',
+    'In basis points of bars compared. Success criterion #3 is that this number exists and
+     is documented — not that it is small.',
+    'Phase 5') }}
+{{ m.figure(recon) }}
+<p class="small" style="margin-top:6px">HistData is a <strong>second opinion, not a
+  fallback</strong>. Where two independent feeds disagree materially on the same bar, at
+  least one is wrong, and the rate is a data-quality finding in its own right. Anything
+  that quietly reconciles them destroys a deliverable rather than merely hiding a bug.</p>
+<p class="small muted">Hypothesis H4 predicts disagreement clusters around rollover, news
+  releases, and thin holiday sessions. High confidence it exists; the magnitude is
+  genuinely unknown and is one of the more interesting numbers this project will produce.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Tick-rate anomalies</h2>
+{{ m.card_open('EURUSD ticks per minute', 'demo',
+    'A sudden drop usually means a feed gap, not a quiet market — which is why it is
+     monitored rather than assumed.',
+    'Phase 5') }}
+{{ m.figure(anomaly) }}
+{{ m.card_close() }}
+
+<h2 class="section">The timezone anchor</h2>
+{{ m.card_open('ECB daily fix as a drift detector', 'recorded', '') }}
+<p class="small" style="margin:0">The ECB reference rate is a single point per day —
+  useless for trading, valuable as an anchor. If the reconstructed daily close diverges
+  systematically from the ECB fix over months, there is a timezone or session-boundary
+  bug. Silent timezone bugs are rated high-likelihood in the risk register, and this check
+  is specifically designed to catch them.</p>
+{{ m.card_close() }}
+{% endblock %}

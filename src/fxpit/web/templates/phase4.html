@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}Phase 4 — Session &amp; calendar{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Phase 4 — Session and calendar layer</h1>
+  <p>FX week boundaries, DST handling, rollover windows, and per-currency holiday
+     calendars. Underrated, disproportionately interview-relevant, and — as Phase 0
+     discovered — a partial dependency of Phase 1 rather than a later add-on.</p>
+</div>
+
+<div class="callout">
+  <strong>Exit criterion:</strong> for any timestamp, answer which session it falls in,
+  whether it is rollover, and whether it is a holiday for either leg of the pair.
+  <span class="pill pill--neutral">planned</span>
+</div>
+
+<div class="callout callout--warn" style="margin-top:14px">
+  <strong>Why this phase moved earlier.</strong> Dukascopy returns HTTP 200 with a 0-byte
+  body for closed sessions, not a 404. HTTP status therefore cannot distinguish
+  "market closed" from "feed gap" — only the session calendar can. Phase 1's coverage
+  report needs this.
+</div>
+
+<h2 class="section">DST offset windows</h2>
+{{ m.card_open('US and EU shift on different dates', 'demo',
+    'For two to three weeks each spring and autumn the London–New York overlap is an hour
+     different from normal. A recurring, genuine source of bugs.',
+    'Phase 4') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Window</th><th>Condition</th><th>Overlap</th><th>Delta</th></tr></thead>
+  <tbody>
+  {% for w in windows %}
+    <tr>
+      <td class="mono small">{{ w.window }}</td>
+      <td class="small muted">{{ w.note }}</td>
+      <td class="mono small">{{ w.overlap }}</td>
+      <td>{% if w.status == 'anomaly' %}<span class="pill pill--warning">! {{ w.delta }}</span>
+          {% else %}<span class="pill pill--neutral">{{ w.delta }}</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small muted" style="margin-top:10px">Hypothesis H6 predicts these windows show
+  measurably different session-overlap behaviour. High confidence the artefact exists;
+  unknown whether it is economically meaningful.</p>
+{{ m.card_close() }}
+
+<h2 class="section">Rollover</h2>
+{{ m.card_open('Rollover windows and spread behaviour', 'demo',
+    'Approximately 21:00–22:00 UTC, moving with DST. Spreads widen sharply and the
+     widening is not noise — it is when swap is applied.',
+    'Phase 4') }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Date</th><th>Start</th><th>End</th>
+             <th class="num">Median spread</th><th class="num">vs baseline</th></tr></thead>
+  <tbody>
+  {% for r in rollovers %}
+    <tr><td class="mono small">{{ r.date }}</td>
+        <td class="mono small">{{ r.start }}</td>
+        <td class="mono small">{{ r.end }}</td>
+        <td class="num">{{ r.median_spread }}</td>
+        <td class="num">{{ r.vs_baseline }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+
+<h2 class="section">What the session table must answer</h2>
+{{ m.card_open('Joinable to any timestamp', 'recorded', '') }}
+<div class="table-wrap"><table>
+  <tbody>
+    <tr><td style="width:36%"><strong>Which session?</strong></td>
+        <td class="small muted">Sydney, Tokyo, London, New York — and the overlaps, which
+          are where liquidity concentrates.</td></tr>
+    <tr><td><strong>Is it rollover?</strong></td>
+        <td class="small muted">The window moves with DST, so it cannot be a fixed UTC
+          constant.</td></tr>
+    <tr><td><strong>Is it a holiday for either leg?</strong></td>
+        <td class="small muted">EURUSD on US Independence Day is a different instrument
+          from EURUSD on a normal Thursday. Both legs matter, not just the quote
+          currency.</td></tr>
+    <tr><td><strong>Is the market open at all?</strong></td>
+        <td class="small muted">Sunday open and Friday close move with DST. This is the
+          answer Phase 1 needs to tell an empty payload from a missing one.</td></tr>
+  </tbody>
+</table></div>
+{{ m.card_close() }}
+{% endblock %}

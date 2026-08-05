@@ -1,0 +1,63 @@
+{# Shared building blocks.
+
+   `card` takes provenance as a REQUIRED first-class argument rather than an
+   optional kwarg, so there is no syntactically valid way to render a panel
+   without saying where its numbers came from. #}
+
+{% macro prov_badge(kind) %}
+  <span class="prov prov--{{ kind }}"><span class="prov__dot"></span>{{
+    {'live':'Live','recorded':'Recorded','demo':'Demo data'}[kind] }}</span>
+{% endmacro %}
+
+{% macro card_open(title, prov, note='', replaced_by='') %}
+<section class="card {% if prov == 'demo' %}card--demo{% endif %}">
+  <div class="card__head">
+    <h3 class="card__title">{{ title }}</h3>
+    {{ prov_badge(prov) }}
+  </div>
+  {% if note %}<p class="card__note">{{ note }}</p>{% endif %}
+  {% if prov == 'demo' %}
+    <p class="demo-note"><strong>Synthetic.</strong> Shape only — these numbers describe
+      nothing. Replaced by real output in <strong>{{ replaced_by }}</strong>.</p>
+  {% endif %}
+{% endmacro %}
+
+{% macro card_close() %}
+</section>
+{% endmacro %}
+
+{% macro table_view(chart) %}
+<details class="table-view">
+  <summary>Table view{% if chart.table.caption %} — {{ chart.table.caption }}{% endif %}</summary>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        {% for c in chart.table.columns %}
+        <th {% if not loop.first %}class="num"{% endif %}>{{ c }}</th>
+        {% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for row in chart.table.rows %}
+        <tr>{% for cell in row %}
+          <td {% if not loop.first %}class="num"{% endif %}>{{ cell }}</td>
+        {% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endmacro %}
+
+{% macro figure(chart, series_names=[], scroll=false) %}
+  {% if series_names|length >= 2 %}{{ legend(series_names)|safe }}{% endif %}
+  <div class="{% if scroll %}chart-scroll{% endif %}">{{ chart.svg|safe }}</div>
+  {{ table_view(chart) }}
+{% endmacro %}
+
+{% macro stat(label, value, sub='', tone='') %}
+<div class="card"><div class="stat">
+  <span class="stat__label">{{ label }}</span>
+  <span class="stat__value {% if tone %}stat__value--{{ tone }}{% endif %}">{{ value }}</span>
+  {% if sub %}<span class="stat__sub">{{ sub }}</span>{% endif %}
+</div></div>
+{% endmacro %}
